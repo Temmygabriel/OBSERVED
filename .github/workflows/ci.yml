@@ -50,7 +50,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # The lockfile may not exist yet on the very first run. Prefer `npm ci`
       # (reproducible) and fall back to `npm install` until it does.
@@ -62,8 +62,34 @@ jobs:
             npm install --no-audit --no-fund
           fi
 
+      # Each workspace is typechecked separately rather than through the root
+      # `npm run typecheck`, for two reasons: npm aborts the workspace run at the
+      # first failure, so a single error in shared-types would hide every error
+      # in web and worker; and the combined log goes to the job summary below so
+      # a failure is readable directly from the GitHub API without downloading
+      # the raw log.
       - name: Typecheck
-        run: npm run typecheck
+        run: |
+          set -o pipefail
+          : > typecheck.log
+          failed=0
+          for workspace in @observed/shared-types @observed/web @observed/worker; do
+            echo "=== $workspace ===" >> typecheck.log
+            npm run typecheck --workspace "$workspace" >> typecheck.log 2>&1 || failed=1
+          done
+          exit $failed
+
+      - name: Publish typecheck output
+        if: always()
+        run: |
+          {
+            echo '## Typecheck output'
+            echo ''
+            echo '```'
+            # Capped: a runaway error list should not make the summary unreadable.
+            tail -c 200000 typecheck.log 2>/dev/null || echo '(no typecheck.log was produced)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build
         run: npm run build

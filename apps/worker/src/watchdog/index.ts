@@ -44,6 +44,25 @@ export interface WatchdogInput {
 }
 
 /**
+ * What the state machine actually reads: the probe RESULTS, not the probe
+ * definitions.
+ *
+ * These are two different types on purpose. A `ProbeDefinition` is a thing to
+ * run and has no `.state`; a `StatusProbe` is a result and has nothing to run.
+ * Keeping them apart is what makes it impossible to compute the state from
+ * unchecked definitions — which would report HEALTHY on the strength of probes
+ * that had not been executed yet.
+ */
+export interface WatchdogFacts {
+  probes: readonly StatusProbe[];
+  paymentsEnabled: boolean;
+  lastSuccessfulReviewAt: string | null;
+  inactivityAlertMinutes: number;
+  now: Date;
+  recovering?: boolean;
+}
+
+/**
  * The state machine: HEALTHY → DEGRADED → BLOCKED → RECOVERING → HEALTHY.
  *
  * The ordering of the branches IS the policy, so it is worth reading:
@@ -59,15 +78,15 @@ export interface WatchdogInput {
  *              BLOCKED is not an instant, unearned "all clear".
  *   HEALTHY  — every probe ok AND a successful review inside the window.
  */
-export function deriveState(input: WatchdogInput): WatchdogState {
-  const { probes, now, inactivityAlertMinutes, lastSuccessfulReviewAt } = input;
+export function deriveState(facts: WatchdogFacts): WatchdogState {
+  const { probes, now, inactivityAlertMinutes, lastSuccessfulReviewAt } = facts;
 
   const hasDown = probes.some((probe) => probe.state === 'down');
   const hasDegraded = probes.some(
     (probe) => probe.state === 'degraded' || probe.state === 'unknown',
   );
 
-  if (!input.paymentsEnabled) return 'BLOCKED';
+  if (!facts.paymentsEnabled) return 'BLOCKED';
   if (hasDown) return 'BLOCKED';
 
   const minutesSince = minutesSinceLastReview(lastSuccessfulReviewAt, now);
@@ -79,7 +98,7 @@ export function deriveState(input: WatchdogInput): WatchdogState {
   }
 
   if (hasDegraded) return 'DEGRADED';
-  if (input.recovering) return 'RECOVERING';
+  if (facts.recovering) return 'RECOVERING';
   return 'HEALTHY';
 }
 
@@ -190,7 +209,14 @@ export async function runWatchdog(
     input.now,
   );
 
-  const state = deriveState({ ...input, probes });
+  const state = deriveState({
+    probes,
+    paymentsEnabled: input.paymentsEnabled,
+    lastSuccessfulReviewAt: input.lastSuccessfulReviewAt,
+    inactivityAlertMinutes: input.inactivityAlertMinutes,
+    now: input.now,
+    recovering: input.recovering,
+  });
 
   return {
     watchdog_state: state,
