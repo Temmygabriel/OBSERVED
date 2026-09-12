@@ -63,20 +63,30 @@ jobs:
           fi
 
       # Each workspace is typechecked separately rather than through the root
-      # `npm run typecheck`, for two reasons: npm aborts the workspace run at the
-      # first failure, so a single error in shared-types would hide every error
-      # in web and worker; and the combined log goes to the job summary below so
-      # a failure is readable directly from the GitHub API without downloading
-      # the raw log.
+      # `npm run typecheck`, for two reasons: npm aborts a --workspaces run at
+      # the first failing package, so a single error in shared-types would hide
+      # every error in web and worker; and the output goes to stdout as well as
+      # to the log file, which is what lets GitHub surface each `error TS...`
+      # line as an annotation on the commit.
       - name: Typecheck
         run: |
           set -o pipefail
           : > typecheck.log
           failed=0
           for workspace in @observed/shared-types @observed/web @observed/worker; do
-            echo "=== $workspace ===" >> typecheck.log
-            npm run typecheck --workspace "$workspace" >> typecheck.log 2>&1 || failed=1
+            echo "=== $workspace ===" | tee -a typecheck.log
+            npm run typecheck --workspace "$workspace" 2>&1 | tee -a typecheck.log || failed=1
           done
+
+          # Downloading job logs needs admin rights on the repo; reading check-run
+          # annotations does not. Re-emitting each compiler error as an
+          # `::error::` workflow command is what makes a failure diagnosable
+          # without a token. Capped at 20 lines — the UI shows only the first few
+          # anyway, and typecheck.log still holds the whole thing.
+          grep -E 'error TS[0-9]+' typecheck.log \
+            | head -20 \
+            | sed -e 's/%/%25/g' -e 's/^/::error::/' || true
+
           exit $failed
 
       - name: Publish typecheck output
