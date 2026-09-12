@@ -43,6 +43,8 @@ Operator confirmed the first push is **"Website + skeleton"**.
 | **Worker: audit ledger** | `audit-ledger/index.ts` — **complete**. Hash chain with canonical JSON, full re-walk verification |
 | **Worker: watchdog** | `watchdog/index.ts` — Rules 7 + 12, **complete**. State machine + business-inactivity alert |
 | **Worker: DNS collector** | `evidence-worker/collectors/dns.ts` — **complete** (the one collector needing no key and no HTTP client) |
+| **Worker: pinned fetcher** | `evidence-worker/pinned-request.ts` — **complete**. Redirect-following HTTP that calls `assertRedirectHop` on every hop and connects to the validated IP, not the hostname. Bounded by a shared deadline, a 512 KiB body cap, and a hop limit |
+| **Worker: HTML collector** | `evidence-worker/collectors/html.ts` — **complete**. Status, content type, redirect chain, served address, title, meta description, lang, viewport — each with an exact locator. Raw body goes to the store; only the hash and metadata leave |
 | **Worker: policy gate** | `policy-engine/index.ts` — `evaluateProject`, exclusion before spend |
 | **Worker: review validation** | `review-generator/index.ts` — `validateClaims` + `renderDraft` are **real**; only the model call is stubbed |
 | **Worker: payment policy** | `payment-worker/payment-gate.ts` — provider allowlist, attribution refusal (Rule 8), `mayRetry` are **real**; only the `buy` call is stubbed |
@@ -54,7 +56,9 @@ Operator confirmed the first push is **"Website + skeleton"**.
 
 These throw a named error. They never return a plausible-looking value.
 
-- `evidence-worker/collectors/` — `html.ts`, `tls.ts`, `screenshot.ts`, `repo.ts`
+- `evidence-worker/collectors/` — `tls.ts`, `screenshot.ts`, `repo.ts`
+- The `html` link sweep — a deliberately separate pass over the parsed body, so
+  that per-link results never fold into the page's own status
 - `review-generator/index.ts` — `draftClaims()` (the model call itself)
 - `payment-worker/payment-gate.ts` — `executePayment()` (the `buy` MCP call)
 - `askbots-adapter/index.ts` — `pollProjects()` and the submit HTTP call
@@ -91,21 +95,24 @@ reason rather than showing nothing.
 
 ## Next actions, in order
 
-1. **Write the `html` collector.** It is the demo's centrepiece and needs no key
-   and no wallet. Build it on `assertPublicTarget` / `assertRedirectHop` and
-   `pinResolvedAddress`, which are already written — that is what makes this
-   collector safe to write before any payment path exists.
-2. Then `tls` (simplest remaining), then `repo`, then `screenshot` (the only one
-   that needs the paid path).
-3. Operator connects the repo to Vercel. The app already builds in CI, so this is
+1. **Write the `tls` collector.** The simplest one left, and it shares the
+   pieces already written: `assertPublicTarget` for the guard, and a socket
+   whose SNI and certificate verification are already correct. It needs the
+   peer certificate off the connection, not a new fetcher.
+2. Then the `html` link sweep — the second pass over the parsed body. Report
+   per-link results, never one folded status, and leave an unreachable link as
+   `unknown_*`.
+3. Then `repo` (public API, no key), then `screenshot` (the only one that needs
+   the paid path, so it waits for a wallet).
+4. Operator connects the repo to Vercel. The app already builds in CI, so this is
    a configuration step, not a code step. `NEXT_PUBLIC_OBSERVED_API_URL` stays
    unset until a worker is deployed.
-4. Registration day: get the agent ID, wallet, and attribution tag; send one tiny
+5. Registration day: get the agent ID, wallet, and attribution tag; send one tiny
    test transaction and verify the tag with `verifyTx` **before** any second
    transaction. Rule 8 has no backfill.
-5. AskBots adapter last — the only piece needing a live key, plus the day-one
+6. AskBots adapter last — the only piece needing a live key, plus the day-one
    `curl` that resolves the daily-limit contradiction in spec Section 8.
-6. Optional housekeeping: `package-lock.json` is generated inside CI on every run
+7. Optional housekeeping: `package-lock.json` is generated inside CI on every run
    but never committed, so installs are not yet reproducible and CI still takes
    the `npm install` branch rather than `npm ci`. Committing one needs either a
    local `npm install` (forbidden on this machine) or a CI job with
@@ -125,16 +132,21 @@ Session 2 made the machinery that *enforces* the claim real. The SSRF guard, the
 exclusion check, the spend caps, the claim validator and the hash chain are
 written and will refuse to operate incorrectly; they are not stubs that pretend.
 
-Session 3 made the build **verified**. CI is green: all three workspaces
-typecheck under the real compiler, and `next build` produces a production build.
-Until now "it compiles" was an assumption, because this machine cannot run a
-build — it is now a fact GitHub asserts on every push, and it will stay asserted
-on every future push. Two compiler errors surfaced and were fixed; one of them
-was hiding a genuine logic bug (a permanently-wedged spend gate) that reading the
-file locally had not caught. See `MEMORY.md` decision 14.
+Session 3 made the build **verified**, and then used it. CI is green: all three
+workspaces typecheck under the real compiler and `next build` produces a
+production build. Until now "it compiles" was an assumption, because this machine
+cannot run a build — it is now a fact GitHub asserts on every push, and it will
+stay asserted on every future push. Two compiler errors surfaced and were fixed;
+one of them was hiding a genuine logic bug (a permanently-wedged spend gate) that
+reading the file locally had not caught. See `MEMORY.md` decision 14.
 
-So the gap is now narrow and specific: **four collectors and two API calls**,
-not "the whole worker". The frontend is deployable as it stands.
+The same session wrote the **HTML collector and the pinned fetcher beneath it**,
+so the project's arc from "no observation ever made" to "a real observation with
+a timestamp and a hash" is now one authorised call away. What is still missing
+before that call can happen is the wallet, not the code.
+
+The gap is now narrow and specific: **three collectors, the link sweep, and two
+API calls** — not "the whole worker". The frontend is deployable as it stands.
 
 The frontend continues to ship with an explicit `RecordProvenance` type and a
 visible label on every non-live record. Nothing in the UI is presented as a real

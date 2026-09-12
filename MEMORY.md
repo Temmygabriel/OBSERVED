@@ -5,7 +5,8 @@ things or re-litigate settled decisions. `PROGRESS.md` says *what* is built.
 This file says *why*, and records the environment facts that are easy to
 forget.
 
-**Last updated:** 2026-09-12 (session 3 — CI is green; see decision 14).
+**Last updated:** 2026-09-12 (session 3 — CI green; html collector written. See
+decisions 14 and 15).
 
 ---
 
@@ -257,6 +258,43 @@ value. Read the union, not the error.
 **How this was found:** CI, not local reading. Fixing the type error is what
 exposed the logic bug sitting underneath it.
 
+### 15. The fetcher, not the guard, is what makes Rule 4 real
+
+`ssrf-guard.ts` is only half of Rule 4. A guard that is not called on the path a
+request actually takes is decoration, so `pinned-request.ts` is written such that
+the two standard bypasses cannot be expressed at all:
+
+- **No `fetch`, and no `redirect: 'follow'`.** Both resolve the next hop inside
+  the client, where the guard cannot see it. The check would silently cover only
+  the first URL, and a one-line `302 Location: http://169.254.169.254/` would
+  walk straight through a guard that passes any review of the input validation.
+  So the redirect loop is explicit and calls `assertRedirectHop` on every hop.
+- **`host` is an IP literal.** Node skips DNS entirely when `host` is an IP, so
+  there is no second resolution between the address that was checked and the
+  address that was connected to. That gap *is* the DNS-rebinding window.
+  `servername` still carries the real hostname, so TLS SNI and certificate
+  verification are unaffected — pinning costs nothing in correctness.
+
+`fetch` therefore cannot be used here at all, for the second reason: it offers no
+way to pin the connect address.
+
+Every bound is explicit, and each one is load-bearing: a single deadline shared
+across ALL hops (per-hop timeouts multiply), a 512 KiB body cap with the socket
+destroyed on breach, and a hop limit. An unbounded read from a hostile host is a
+memory exhaustion primitive, not a page fetch.
+
+**A Rule 3 corollary that surfaced while writing it:** `ResolutionFailedError` is
+now split out of `BlockedTargetError`, because "we refused this target" is
+`invalid` — a citable finding about the submission — while "our resolver did not
+answer" is `unknown_*`, which says nothing about the target. They were one error
+class, which would have reported every DNS outage as a broken submission: the
+exact inversion Rule 3 exists to prevent. It extends `BlockedTargetError`, so any
+caller that only asks "was this refused?" keeps working unchanged.
+
+Related: the header set handed to the model is an **allowlist**, not a denylist.
+A denylist of credential-shaped names fails open the first time a server invents
+a header nobody anticipated; an allowlist fails closed (Rule 11).
+
 ---
 
 ## Rules that are easy to violate by accident
@@ -264,7 +302,7 @@ exposed the logic bug sitting underneath it.
 | Rule | Where it is enforced |
 |---|---|
 | 3 — tri-state evidence | `shared-types/src/evidence.ts` (`isConclusive()` is the only gate for a claim); `review-generator/validateClaims()` downgrades any claim asserting against an `unknown_*` artifact |
-| 4 — SSRF guard | `worker/src/evidence-worker/ssrf-guard.ts`. **Complete.** Re-check on **every redirect hop** via `assertRedirectHop`; connect to `pinResolvedAddress()`, never re-resolve |
+| 4 — SSRF guard | `worker/src/evidence-worker/ssrf-guard.ts` for the rules, `pinned-request.ts` for the fetcher that actually obeys them. **Both complete.** Re-check on **every redirect hop** via `assertRedirectHop`; connect to `pinResolvedAddress()`, never re-resolve. No `fetch`, no `redirect: 'follow'` — see decision 15 |
 | 5 — exclusion before spend | `worker/src/policy-engine/exclusion.ts` + `evaluateProject()`. The branch order in `evaluateProject` IS the policy: exclusion is checked before a budget is ever consulted |
 | 8 — attribution tag | `payment-gate.ts` `attributionTagOrRefuse()`. **No backfill** — refuse rather than spend untagged |
 | 9 — spend caps | `policy-engine/spend-ledger.ts` + `decimal.ts`. `ambiguous_no_retry` is counted **against** the budget and never retried; the append-only log is collapsed through `latestByPayment()` before any figure is derived from it |
