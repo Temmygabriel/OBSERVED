@@ -66,18 +66,24 @@ export interface LedgerEntry {
  * Statuses that consume budget. `ambiguous_no_retry` is in this list on
  * purpose: the money may well have moved, and a budget that ignores money it
  * might have spent is not a budget.
+ *
+ * `quoted` is NOT here — a quote moves no money. It is the in-flight marker
+ * instead. `failed` is not here either: a clean failure spent nothing.
  */
 const BUDGET_CONSUMING: ReadonlySet<PaymentStatus> = new Set<PaymentStatus>([
   'settled',
-  'submitted',
   'ambiguous_no_retry',
 ]);
 
-/** Statuses that mean a call is still outstanding. */
-const IN_FLIGHT: ReadonlySet<PaymentStatus> = new Set<PaymentStatus>([
-  'quoted',
-  'submitted',
-]);
+/**
+ * The one status meaning "a paid call is outstanding".
+ *
+ * `quoted` is appended before the call and the outcome is appended after it, so
+ * it is the only non-terminal value in `PaymentStatus` — every other one is a
+ * verdict. This set therefore has exactly one member, and that is a fact about
+ * the union rather than a coincidence worth relying on silently.
+ */
+const IN_FLIGHT: ReadonlySet<PaymentStatus> = new Set<PaymentStatus>(['quoted']);
 
 export function consumesBudget(status: PaymentStatus): boolean {
   return BUDGET_CONSUMING.has(status);
@@ -85,6 +91,32 @@ export function consumesBudget(status: PaymentStatus): boolean {
 
 export function isInFlight(status: PaymentStatus): boolean {
   return IN_FLIGHT.has(status);
+}
+
+/**
+ * Collapse the append-only log to one entry per payment: the last one written.
+ *
+ * The ledger records an attempt (`quoted`) before the paid call and the outcome
+ * after it, and it can only ever append — there is no update. Read naively, a
+ * settled payment therefore appears TWICE: once as outstanding and once as
+ * spent. Both readings are wrong in a way that matters. The in-flight count
+ * would never fall back to zero, so after the first paid call the concurrency
+ * gate would refuse every later one; and a budget that counted the attempt as
+ * well as the settlement would double every figure.
+ *
+ * Collapsing first is what makes "is this payment still outstanding?"
+ * answerable at all: a payment is in flight exactly when its most recent entry
+ * is still `quoted`.
+ *
+ * `Map` preserves insertion order, so the collapsed view keeps the ledger's own
+ * chronology and two passes over the same file produce the same numbers.
+ */
+export function latestByPayment(
+  entries: readonly LedgerEntry[],
+): LedgerEntry[] {
+  const latest = new Map<string, LedgerEntry>();
+  for (const entry of entries) latest.set(entry.payment_id, entry);
+  return [...latest.values()];
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +194,8 @@ export function nextUtcMidnight(now: Date): string {
 /**
  * Roll the ledger up into the `SpendState` the UI renders.
  *
+ * Reads the collapsed view, so an attempt and its outcome are counted once.
+ *
  * `reviews_today` counts distinct review sessions with a budget-consuming
  * entry, not entries — one review makes several paid calls and is still one
  * review.
@@ -178,7 +212,7 @@ export function computeSpendState(
   const daily: string[] = [];
   const reviewSessionsToday = new Set<string>();
 
-  for (const entry of entries) {
+  for (const entry of latestByPayment(entries)) {
     if (!consumesBudget(entry.status)) continue;
 
     const at = new Date(entry.recorded_at).getTime();
@@ -243,7 +277,7 @@ function paidCallsForProvider(
   reviewSessionId: string,
   providerHostname: string,
 ): number {
-  return entries.filter(
+  return latestByPayment(entries).filter(
     (entry) =>
       entry.review_session_id === reviewSessionId &&
       entry.provider_hostname === providerHostname &&
@@ -256,7 +290,7 @@ function spendForReview(
   reviewSessionId: string,
 ): string {
   return sumAmounts(
-    entries
+    latestByPayment(entries)
       .filter(
         (entry) =>
           entry.review_session_id === reviewSessionId &&
@@ -299,8 +333,12 @@ export function authorizeSpend(input: AuthorizeInput): SpendDecision {
 
   // Rule 9's concurrency limit. Computed from in-flight ENTRIES, not from a
   // counter held in memory, so a restart cannot lose the fact that a call is
-  // outstanding.
-  const inFlight = entries.filter((entry) => isInFlight(entry.status)).length;
+  // outstanding. Collapsed first: an attempt that has since been given an
+  // outcome is no longer outstanding, and counting it would wedge the gate shut
+  // permanently after the very first paid call.
+  const inFlight = latestByPayment(entries).filter((entry) =>
+    isInFlight(entry.status),
+  ).length;
   if (inFlight >= caps.maxConcurrentPaidCalls) {
     return {
       allowed: false,
