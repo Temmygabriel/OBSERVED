@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Observed">
+  <!--
+    The mark: a checked observation. A square ruled like a notebook page, with
+    the evidence-blue check inside it — the one accent colour the design system
+    permits for things Observed actually confirmed.
+
+    Kept as inline colour values rather than CSS variables on purpose: a favicon
+    is rendered outside the document, so `var(--evidence-blue)` would resolve to
+    nothing and the mark would render black.
+  -->
+  <rect width="32" height="32" rx="4" fill="#f7f5f0" />
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="3.5" fill="none" stroke="#dedacd" stroke-width="1.5" />
+  <path
+    d="M8 17.5 L13.5 23 L24 10"
+    fill="none"
+    stroke="#1d5fd1"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

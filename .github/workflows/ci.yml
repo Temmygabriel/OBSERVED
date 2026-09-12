@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Rule 11 is enforced by a machine, not by good intentions.
+  secret-hygiene:
+    name: Secret hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No real .env file is tracked
+        run: |
+          set -euo pipefail
+          tracked=$(git ls-files | grep -E '(^|/)\.env$|(^|/)\.env\.(local|production|development|staging)$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::A real .env file is committed:"
+            echo "$tracked"
+            echo "Secrets live only in the platform secret store (Rule 11)."
+            exit 1
+          fi
+          echo "OK — no tracked .env files."
+
+      - name: No non-empty secret values in .env.example
+        run: |
+          set -euo pipefail
+          # .env.example may declare secret keys, but they must be empty.
+          bad=$(grep -nE '^(ASKBOTS_API_KEY|BUY_WALLET_PRIVATE_KEY|CENCORI_API_KEY|ATTRIBUTION_TAG)=.+' .env.example || true)
+          if [ -n "$bad" ]; then
+            echo "::error::.env.example has a non-empty secret value:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "OK — .env.example declares no secret values."
+
+  build:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The lockfile may not exist yet on the very first run. Prefer `npm ci`
+      # (reproducible) and fall back to `npm install` until it does.
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Remind about the lockfile
+        if: ${{ hashFiles('package-lock.json') == '' }}
+        run: |
+          echo "::notice::No package-lock.json yet. Once one is committed, CI switches to 'npm ci' automatically."

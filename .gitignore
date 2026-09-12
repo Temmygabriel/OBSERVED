@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# Environment — Rule 11: secrets live ONLY in the platform secret store.
+# Never commit a real .env. See .env.example for the shape.
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+
+# Evidence Store — raw artifacts are private. Only the hash + metadata
+# record is ever shown to the LLM, and only the sanitized manifest is public.
+apps/worker/data/
+apps/worker/raw-artifacts/
+
+# Audit Ledger — the live, append-only ledger is private.
+# Only the sanitized public manifest is committed.
+apps/worker/ledger/*.jsonl
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Claude Code — local tool permissions are machine-specific, not project config.
+.claude/settings.local.json
+
+# Vercel
+.vercel
+
+# Test / coverage
+coverage/

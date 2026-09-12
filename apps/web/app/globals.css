@@ -1,0 +1,1047 @@
+/* ==========================================================================
+   Observed — design tokens and base styles
+
+   Material reference: the inspection notebook. A claim on the right-hand page
+   always points back to a numbered exhibit. Hairline rules. Real paper-white,
+   not screen-white. Typewriter-precise data next to serif prose.
+
+   The whole visual language exists to make one thing obvious without
+   narration: the evidence came first, the sentence came second.
+   ========================================================================== */
+
+:root {
+  /* --- Color (design spec Section 3) ------------------------------------- */
+
+  --paper: #f7f5f0; /* warm off-white, never pure white */
+  --ink: #141310; /* near-black, never pure black */
+  --ink-secondary: #5c594e;
+  --ink-muted: #9b978a;
+  --rule: #dedacd; /* hairline borders and dividers */
+  --rule-strong: #c8c2af;
+
+  /* The ONE accent. Reserved for things Observed actually confirmed. */
+  --evidence-blue: #1d5fd1;
+  --evidence-blue-bg: #e7eefb;
+
+  /* A real finding was detected. A burnt printed-report red-orange, not a
+     bright UI-error red. */
+  --detected-amber: #c1441e;
+  --detected-amber-bg: #f7e9e2;
+
+  /* Accepted / passing only. */
+  --confirmed-green: #3f7d3b;
+  --confirmed-green-bg: #e8f0e5;
+
+  /* Restraint rule: evidence-blue and detected-amber are the only two colors
+     that carry meaning. Everything else is ink / paper / rule. If a screen has
+     more than these two accents doing semantic work, something has gone wrong.
+     A fourth accent color must not be introduced — see StatusBadge. */
+
+  /* --- Typography --------------------------------------------------------- */
+
+  /* Fallback stacks included on purpose: if the webfont fails to load the page
+     should still look deliberate, not broken. */
+  --font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+    Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  /* --- Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48 ---------------------- */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+
+  /* --- Shape -------------------------------------------------------------- */
+  /* Deliberately tighter than the 12-16px of rounded-SaaS. "Instrument", not
+     "app". */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+
+  --measure: 880px;
+  --gutter: 24px;
+}
+
+/* No dark mode for v1. This is not an oversight — the paper/instrument
+   aesthetic depends on a light surface, and neon-on-black is the exact visual
+   cliché this project is trying to be distinguishable from. Do not add a
+   prefers-color-scheme block here without revisiting that decision. */
+
+/* ==========================================================================
+   Reset
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* A functional focus ring is the only permitted shadow in the product. */
+:focus-visible {
+  outline: 2px solid var(--evidence-blue);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   Layout
+   ========================================================================== */
+
+.shell {
+  width: 100%;
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding-inline: var(--gutter);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+.stack--tight {
+  gap: var(--s3);
+}
+
+/* ==========================================================================
+   Navigation
+   ========================================================================== */
+
+.nav {
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+.nav__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s5);
+  min-height: 60px;
+  flex-wrap: wrap;
+}
+
+.nav__brand {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.nav__right {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+}
+
+.nav__links {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+}
+
+.navlink {
+  color: var(--ink-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  padding-block: var(--s1);
+  border-bottom: 1px solid transparent;
+}
+
+.navlink:hover {
+  color: var(--ink);
+}
+
+.navlink--active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.livepill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.livepill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--evidence-blue);
+  flex: none;
+}
+
+.livepill__dot--stopped {
+  background: var(--ink-muted);
+}
+
+.livepill__dot--blocked {
+  background: var(--detected-amber);
+}
+
+/* ==========================================================================
+   Typography
+   ========================================================================== */
+
+.h1 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.h2 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 18px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.lede {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-secondary);
+  margin: 0;
+}
+
+.meta {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+
+/* Monospace is applied ONLY to machine-observed data: URLs, status codes,
+   timestamps, hashes, evidence ids. Never to headings, buttons, or prose. */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-ligatures: none;
+}
+
+.mono--strong {
+  color: var(--ink);
+}
+
+.section-label {
+  font-size: 13px;
+  color: var(--ink-secondary);
+  margin: 0;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+}
+
+/* ==========================================================================
+   Buttons and controls
+   ========================================================================== */
+
+.btn {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1;
+  padding: 11px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--rule-strong);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--ink-secondary);
+}
+
+.btn--primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.btn--primary:hover {
+  background: #000;
+  border-color: #000;
+}
+
+.btn--sm {
+  font-size: 13px;
+  padding: 7px 12px;
+}
+
+.btn[disabled] {
+  color: var(--ink-muted);
+  border-color: var(--rule);
+  cursor: not-allowed;
+  background: transparent;
+}
+
+.input {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  width: 100%;
+}
+
+.input::placeholder {
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--evidence-blue);
+  box-shadow: 0 0 0 3px var(--evidence-blue-bg);
+}
+
+/* ==========================================================================
+   Panel — the base container. Hairline border, no shadow, tight radius.
+   ========================================================================== */
+
+.panel {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  padding: var(--s5);
+  background: var(--paper);
+}
+
+.panel--flush {
+  padding: 0;
+}
+
+.panel__head {
+  padding: var(--s4) var(--s5);
+  border-bottom: 1px solid var(--rule);
+}
+
+.panel__body {
+  padding: var(--s5);
+}
+
+/* ==========================================================================
+   Provenance banner — shown whenever a record is not live.
+   The design spec forbids presenting a replay or a sample as if it were live.
+   ========================================================================== */
+
+.provenance {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--rule-strong);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+.provenance__label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+  flex: none;
+}
+
+.provenance__text {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+/* ==========================================================================
+   StatusBadge — color pairing is FIXED per state. Never mix pairs, never
+   introduce a fourth accent. See the design spec, Section 6.
+   ========================================================================== */
+
+.badge {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge--accepted {
+  color: var(--confirmed-green);
+  background: var(--confirmed-green-bg);
+}
+
+/* Self-correction is not failure: "Rewritten" uses the evidence-blue pair. */
+.badge--rewritten,
+.badge--observed,
+.badge--live {
+  color: var(--evidence-blue);
+  background: var(--evidence-blue-bg);
+}
+
+.badge--detected,
+.badge--held {
+  color: var(--detected-amber);
+  background: var(--detected-amber-bg);
+}
+
+/* "Unable to verify" is not a detection and not a confirmation, so it gets NO
+   accent color. Ink on paper with a hairline border is the neutral base, not a
+   fourth accent — collapsing it into a colour would imply a verdict the
+   evidence does not support. */
+.badge--unable {
+  color: var(--ink-secondary);
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+}
+
+/* ==========================================================================
+   EvidenceRow — tri-state icon + label + optional mono value.
+   ========================================================================== */
+
+.evrow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  padding-block: var(--s3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.evrow:last-child {
+  border-bottom: 0;
+}
+
+.evrow__icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  position: relative;
+  top: 2px;
+}
+
+.evrow__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.evrow__value {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-secondary);
+  text-align: right;
+}
+
+.evrow__value--detected {
+  color: var(--detected-amber);
+}
+
+.evrow__value--observed {
+  color: var(--evidence-blue);
+}
+
+/* ==========================================================================
+   InspectionChecklistItem — exactly three visual states.
+   done = evidence-blue check, active = filled dot (no spinner), pending = empty circle.
+   ========================================================================== */
+
+.checkitem {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding-block: var(--s3);
+}
+
+.checkitem + .checkitem {
+  border-top: 1px solid var(--rule);
+}
+
+.checkitem__label {
+  flex: 1 1 auto;
+  font-size: 15px;
+}
+
+.checkitem--pending .checkitem__label {
+  color: var(--ink-muted);
+}
+
+.checkitem--active .checkitem__label {
+  color: var(--ink);
+}
+
+.checkitem__elapsed {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+/* ==========================================================================
+   Hero sequence — Claim -> Proof. The product's literal mechanism, given a
+   full screen and real time to unfold.
+   ========================================================================== */
+
+.hero__target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s3);
+}
+
+.hero__stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s5);
+  padding-block: var(--s4);
+  border-block: 1px solid var(--rule);
+}
+
+.stage {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+}
+
+.stage__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rule-strong);
+  flex: none;
+}
+
+.stage--active {
+  color: var(--evidence-blue);
+}
+
+.stage--active .stage__dot {
+  background: var(--evidence-blue);
+}
+
+.stage--done {
+  color: var(--ink-secondary);
+}
+
+.stage--done .stage__dot {
+  background: var(--ink-secondary);
+}
+
+/* The exhibit. A notebook margin rule with the exhibit number in it. */
+.exhibit {
+  border-left: 1px solid var(--rule-strong);
+  padding-left: var(--s4);
+}
+
+.exhibit__tag {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+}
+
+/* The raw fact, shown before any interpretation. */
+.fact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s3);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--ink);
+  padding-block: var(--s2);
+}
+
+.fact--detected {
+  color: var(--detected-amber);
+}
+
+.fact__time {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.fact__result {
+  color: var(--ink);
+}
+
+.fact__result--detected {
+  color: var(--detected-amber);
+}
+
+/* The review sentence, rendered word by word from the fact above it. */
+.sentence {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 46ch;
+}
+
+/* --- Reveal gating ------------------------------------------------------
+   Revealed content is ALWAYS in the DOM; only its opacity is gated by a data
+   attribute. Three things fall out of that, all of them wanted:
+
+     1. Nothing reflows as words appear — the space is reserved from the start,
+        so the paragraph never jitters.
+     2. The full sentence and the observed fact are available to screen readers
+        and to copy-paste from the very first frame. We are pacing an
+        appearance, not withholding information.
+     3. `prefers-reduced-motion` can force every stage resolved with a single
+        CSS rule, at first paint — no flash, no waiting on a JS timer.
+   ---------------------------------------------------------------------- */
+
+[data-revealed='false'] {
+  opacity: 0;
+}
+
+[data-revealed='true'] {
+  opacity: 1;
+}
+
+.fact,
+.stage,
+.sentence__word {
+  transition: opacity 200ms ease-out;
+}
+
+.sentence__word {
+  transition-duration: 140ms;
+}
+
+/* ==========================================================================
+   ClaimCard — serif sentence + mono inline citation + evidence reference.
+   ========================================================================== */
+
+.claim {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+}
+
+.claim__body {
+  padding: var(--s5);
+}
+
+.claim__sentence {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  line-height: 1.5;
+  margin: 0 0 var(--s3) 0;
+}
+
+.claim__detail {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
+}
+
+.claim__detail-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: var(--s3);
+  align-items: baseline;
+}
+
+.claim__detail-key {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.claim__detail-val {
+  font-size: 14px;
+  margin: 0;
+}
+
+.claim__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) var(--s5);
+  border-top: 1px solid var(--rule);
+}
+
+.citation {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+/* ==========================================================================
+   EvidenceChip — small outline button that opens the artifact in an IN-FLOW
+   panel. Deliberately not a modal: nothing here needs position: fixed.
+   ========================================================================== */
+
+.chip {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--ink-secondary);
+  color: var(--ink);
+}
+
+.chip[aria-expanded="true"] {
+  border-color: var(--evidence-blue);
+  color: var(--evidence-blue);
+}
+
+/* <details> disclosure — used by the Excluded screen's "why this rule exists".
+   The default marker is removed because the summary IS a .chip here; leaving
+   the triangle in would put two competing affordances on one control. The
+   chip's own border already signals "this opens", so nothing is lost. */
+summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+summary::marker {
+  content: "";
+}
+
+details[open] > summary.chip {
+  border-color: var(--evidence-blue);
+  color: var(--evidence-blue);
+}
+
+.evidence-panel {
+  border-top: 1px solid var(--rule);
+  background: var(--evidence-blue-bg);
+  padding: var(--s4) var(--s5);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: var(--s2) var(--s4);
+  margin: 0;
+}
+
+.kv__key {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.kv__val {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   History
+   ========================================================================== */
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s6);
+  padding-block: var(--s5);
+  border-block: 1px solid var(--rule);
+}
+
+.stat__num {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  line-height: 1.2;
+}
+
+.stat__label {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.history-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding-block: var(--s4);
+  border-bottom: 1px solid var(--rule);
+  text-decoration: none;
+  color: inherit;
+}
+
+.history-row:hover {
+  background: rgba(222, 218, 205, 0.28);
+}
+
+.history-row__left {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.history-row__headline {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.history-row__sub {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+/* ==========================================================================
+   Status probes
+   ========================================================================== */
+
+.probe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s3);
+  padding-block: var(--s3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.probe__name {
+  flex: 1 1 200px;
+  font-size: 14px;
+}
+
+.probe__detail {
+  flex: 1 1 240px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.probe__state {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  flex: none;
+}
+
+.probe__state--ok {
+  color: var(--confirmed-green);
+}
+
+.probe__state--degraded {
+  color: var(--detected-amber);
+}
+
+.probe__state--down {
+  color: var(--detected-amber);
+}
+
+.probe__state--unknown {
+  color: var(--ink-muted);
+}
+
+/* ==========================================================================
+   Empty / Paused / Excluded states
+   ========================================================================== */
+
+.state {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  padding: var(--s6) var(--s5);
+}
+
+.state__title {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  margin: 0 0 var(--s3) 0;
+}
+
+.state__body {
+  margin: 0 0 var(--s5) 0;
+  max-width: 58ch;
+  color: var(--ink-secondary);
+}
+
+.state__path {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+
+.footer {
+  border-top: 1px solid var(--rule);
+  margin-top: var(--s7);
+  padding-block: var(--s5);
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4);
+}
+
+.footer a {
+  color: var(--ink-secondary);
+}
+
+.footer a:hover {
+  color: var(--ink);
+}
+
+/* ==========================================================================
+   Utilities
+   ========================================================================== */
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.spread {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Responsive — single column below 720px. Nothing reorders on mobile: the
+   evidence-then-claim ordering IS the point.
+   ========================================================================== */
+
+@media (max-width: 719px) {
+  :root {
+    --gutter: 16px;
+  }
+
+  .h1 {
+    font-size: 22px;
+  }
+
+  .sentence {
+    font-size: 21px;
+  }
+
+  .stats {
+    gap: var(--s5);
+  }
+
+  .claim__detail-row,
+  .kv {
+    grid-template-columns: 1fr;
+    gap: var(--s1);
+  }
+
+  .panel,
+  .claim__body,
+  .state {
+    padding: var(--s4);
+  }
+
+  .claim__footer,
+  .evidence-panel,
+  .panel__head {
+    padding-inline: var(--s4);
+  }
+}
+
+/* ==========================================================================
+   Reduced motion — the design spec's requirement, implemented declaratively.
+
+   Every revealed element is already in the DOM (see "Reveal gating" above), so
+   honouring this preference is a pure CSS change that applies at first paint.
+   There is no flash of an empty sequence and no dependency on a JS timer
+   having run.
+
+   The informational ORDER is never disabled: the evidence still visually
+   precedes the sentence, because that ordering is the point of the screen.
+   Only the timed build-up is skipped.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-revealed='false'] {
+    opacity: 1 !important;
+    transition: none !important;
+  }
+
+  /* All four stages shown resolved, in their final state. */
+  .stage {
+    color: var(--ink-secondary) !important;
+    transition: none !important;
+  }
+
+  .stage .stage__dot {
+    background: var(--ink-secondary) !important;
+  }
+}

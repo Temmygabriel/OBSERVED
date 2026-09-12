@@ -1,0 +1,19 @@
+{
+  "name": "observed",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A reviewer agent that is not allowed to have an opinion until it has paid for evidence.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "dev:web": "npm run dev --workspace @observed/web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

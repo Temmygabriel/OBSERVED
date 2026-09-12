@@ -1,0 +1,19 @@
+# Normalise line endings in the repository, not in the working copy.
+#
+# Windows checkouts get CRLF locally (which editors there expect), but every
+# file is stored — and therefore shipped to CI and to Vercel — with LF. Without
+# this, a Windows machine and a Linux runner disagree about every line of every
+# file, and every diff shows the whole file as changed.
+* text=auto eol=lf
+
+# These two are line-ending sensitive: a CRLF in a shell script is a syntax
+# error, and a CRLF in a YAML block scalar can change what the run step means.
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary-ish files that must never be line-ending converted.
+*.svg text eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
