@@ -39,6 +39,25 @@ export class BlockedTargetError extends Error {
   }
 }
 
+/**
+ * A refusal because resolution failed, as opposed to a refusal because the
+ * target is one we will not touch.
+ *
+ * The distinction is Rule 3's, and it is the difference between `unknown_*` and
+ * `invalid`. "We could not resolve it" says nothing about the target's
+ * behaviour, so it must never be reported as a finding. Collapsing the two here
+ * would make every DNS outage look like a broken submission.
+ *
+ * Extends `BlockedTargetError` so that any caller which only cares "was this
+ * refused?" keeps working unchanged.
+ */
+export class ResolutionFailedError extends BlockedTargetError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ResolutionFailedError';
+  }
+}
+
 export type Resolver = (hostname: string) => Promise<string[]>;
 
 /** Only these two schemes are ever fetched. No file:, no gopher:, no data:. */
@@ -214,7 +233,9 @@ export async function assertPublicTarget(
   try {
     addresses = await resolve(url.hostname);
   } catch (error) {
-    throw new BlockedTargetError(
+    // Not a `BlockedTargetError`: nothing about the target was observed. This is
+    // our network failing, and the collector must report it as `unknown_*`.
+    throw new ResolutionFailedError(
       `could not resolve ${url.hostname}: ${
         error instanceof Error ? error.message : 'unknown resolver error'
       }`,

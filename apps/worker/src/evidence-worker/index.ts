@@ -15,7 +15,7 @@
  */
 
 import type { CollectorKind, EvidenceArtifact } from '@observed/shared-types';
-import { assertPublicTarget, type Resolver } from './ssrf-guard';
+import { ResolutionFailedError, assertPublicTarget, type Resolver } from './ssrf-guard';
 import { dnsCollector } from './collectors/dns';
 import { htmlCollector } from './collectors/html';
 import { repoCollector } from './collectors/repo';
@@ -95,10 +95,20 @@ export async function collectEvidence(input: CollectInput): Promise<CollectResul
     try {
       await assertPublicTarget(input.target_url, input.resolve);
     } catch (error) {
-      // The target itself is unsafe to fetch. `dns` is the one collector that
-      // can still say something useful, because it reports the address rather
-      // than connecting to it.
-      if (kind === 'dns') {
+      // Two different refusals, and only one of them is a reason to skip.
+      //
+      // `dns` always runs: it reports the address rather than connecting to it,
+      // so a target pointing into private space is a finding it can state
+      // without a single packet sent that way.
+      //
+      // A resolution failure is not a property of the target at all — our
+      // resolver did not answer. Skipping would leave an unexplained gap in the
+      // evidence set; running the collector is what produces the honest
+      // `unknown_*` record instead. Everything else is a target we will not
+      // touch, and there is nothing to observe.
+      const isTargetRefusal = !(error instanceof ResolutionFailedError);
+
+      if (kind === 'dns' || !isTargetRefusal) {
         artifacts.push(await runCollector(collector, input, now, timeoutMs));
       } else {
         skipped.push({
@@ -168,7 +178,7 @@ async function runCollector(
  * the repository. Keeping it in one named place means the /readyz output is
  * either right or visibly stale, and never quietly optimistic.
  */
-export const IMPLEMENTED_COLLECTORS: readonly CollectorKind[] = ['dns'];
+export const IMPLEMENTED_COLLECTORS: readonly CollectorKind[] = ['dns', 'html'];
 
 export type { Collector, CollectorContext, PaidFetchResult };
 export { CollectorNotImplementedError, MissingPaidFetchError };
