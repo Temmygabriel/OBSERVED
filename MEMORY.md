@@ -5,8 +5,7 @@ things or re-litigate settled decisions. `PROGRESS.md` says *what* is built.
 This file says *why*, and records the environment facts that are easy to
 forget.
 
-**Last updated:** 2026-09-12 (session 2 — worker safety core added; see
-decisions 9–13).
+**Last updated:** 2026-09-12 (session 3 — CI is green; see decision 14).
 
 ---
 
@@ -33,6 +32,33 @@ the only signal that the code actually compiles.
 
 Consequence: the first push may well fail CI, and that is the intended
 workflow — CI is the compiler here.
+
+### Reading CI output without a GitHub token
+
+This matters more than it looks: CI *is* the compiler here, so a failure whose
+output cannot be read is a failure that cannot be fixed. Verified 2026-09-12.
+
+| Endpoint | Unauthenticated? |
+|---|---|
+| `GET /repos/{o}/{r}/actions/runs` and `/runs/{id}/jobs` — status, step names, timings | ✅ |
+| `GET /repos/{o}/{r}/check-runs/{job_id}/annotations` | ✅ |
+| `GET /repos/{o}/{r}/actions/jobs/{id}/logs` | ❌ 403 "Must have admin rights to Repository." |
+| `GET /repos/{o}/{r}/actions/runs/{id}/logs` | ❌ same |
+| `$GITHUB_STEP_SUMMARY` via `check-runs.output.summary` | ❌ returns `(none)` |
+
+So annotations are the **only** readable channel. That is why the Typecheck step
+pipes each workspace through `tee` and re-emits every `error TS...` line as an
+`::error::` workflow command — plain stdout is not annotated, and a step that
+redirects the compiler straight into a file reports nothing but
+`Process completed with exit code 1.`
+
+Two quirks worth remembering:
+
+- The `/jobs` response returns `check_run_id: null`, but the job's own `id` **is**
+  the check-run id. Use it directly.
+- GitHub also auto-parses multi-line `tsc` output, so a single error can appear
+  as several annotations (the `file(line,col): error TS...` header plus each
+  "detail" line). De-duplicate when reading.
 
 ---
 
@@ -198,6 +224,39 @@ a wallet. A missing attribution tag refuses before the transaction rather than
 being patched in afterwards — which is the only correct behaviour, since a
 settled transaction cannot be retroactively tagged.
 
+### 14. The spend ledger is collapsed before it is read, never trusted in log order
+
+`spend-ledger.ts` appends two entries per paid call: a `quoted` attempt before
+the call, and the outcome after it. The file is append-only and nothing is ever
+updated.
+
+That is the right storage shape — a crash mid-call leaves the attempt on disk,
+which is exactly when you most need it — but it means **the raw log is not a
+usable view of spend.** Read naively, one settled payment looks like two events:
+one outstanding, one spent. `isInFlight` matched the stale `quoted` attempt
+forever, so the concurrency gate (Rule 9, limit 1) saw one call permanently in
+flight and refused every paid call after the first. The budget double-counted
+the same way.
+
+`latestByPayment()` collapses the log to the last entry per `payment_id`, and
+every consumer — `computeSpendState`, `authorizeSpend`, `paidCallsForProvider`,
+`spendForReview` — reads the collapsed view. Each collapses internally rather
+than trusting a caller to have done it, so each is correct whatever it is
+handed. A payment is outstanding exactly when its most recent entry is still
+`quoted`.
+
+**A related trap that caused this bug:** `PaymentStatus` and `ReviewStatus` are
+different unions that share no members. `PaymentStatus` is
+`quoted | settled | failed | ambiguous_no_retry` (build spec line 177);
+`'submitted'` and `'accepted'` are `ReviewStatus` values. Writing a
+`ReviewStatus` member into a `PaymentStatus` set produces
+`TS2769: No overload matches this call.` — which points at the `new Set<...>(`
+call, not at the offending string, so the error text does not name the bad
+value. Read the union, not the error.
+
+**How this was found:** CI, not local reading. Fixing the type error is what
+exposed the logic bug sitting underneath it.
+
 ---
 
 ## Rules that are easy to violate by accident
@@ -208,7 +267,7 @@ settled transaction cannot be retroactively tagged.
 | 4 — SSRF guard | `worker/src/evidence-worker/ssrf-guard.ts`. **Complete.** Re-check on **every redirect hop** via `assertRedirectHop`; connect to `pinResolvedAddress()`, never re-resolve |
 | 5 — exclusion before spend | `worker/src/policy-engine/exclusion.ts` + `evaluateProject()`. The branch order in `evaluateProject` IS the policy: exclusion is checked before a budget is ever consulted |
 | 8 — attribution tag | `payment-gate.ts` `attributionTagOrRefuse()`. **No backfill** — refuse rather than spend untagged |
-| 9 — spend caps | `policy-engine/spend-ledger.ts` + `decimal.ts`. `ambiguous_no_retry` is counted **against** the budget and never retried |
+| 9 — spend caps | `policy-engine/spend-ledger.ts` + `decimal.ts`. `ambiguous_no_retry` is counted **against** the budget and never retried; the append-only log is collapsed through `latestByPayment()` before any figure is derived from it |
 | 10 — claim → evidence → action | `review-generator/validateClaims()` on the worker; `web/lib/claims.ts` `renderClaimSentence()` is the only place a claim becomes prose |
 | 11 — secrets | CI `secret-hygiene` job; `config.ts` never logs a key (presence checks only); `EvidenceArtifactPanel` denylists credential-shaped metadata keys |
 | 12 — watchdog | `worker/src/watchdog/index.ts`. Alerts on **business** inactivity; `minutes_since_last_review === null` reads as the worst case, not as unknown |

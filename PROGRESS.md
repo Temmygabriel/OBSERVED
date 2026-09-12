@@ -1,6 +1,6 @@
 # Observed — Build Progress
 
-**Last updated:** 2026-09-12 (session 2)
+**Last updated:** 2026-09-12 (session 3)
 **Deadline:** 2026-09-21, 09:00 GMT
 **Days remaining at last update:** 9
 
@@ -27,7 +27,7 @@ Operator confirmed the first push is **"Website + skeleton"**.
 
 | Area | What exists |
 |---|---|
-| CI | `.github/workflows/ci.yml` — secret-hygiene job (enforces Rule 11), typecheck + build job |
+| CI | `.github/workflows/ci.yml` — **GREEN as of `1af9502`**. Secret-hygiene job (Rule 11), typecheck of all three workspaces, and a real `next build` (19s). Compiler errors are re-emitted as annotations so a failure is readable without a token |
 | Docs | `.env.example`, `README.md`, this file, `MEMORY.md` |
 | Shared contracts | `packages/shared-types` — evidence, review, payment, policy, worker↔web API contract |
 | Design system | `apps/web/app/globals.css` — every token from design spec Section 3, all component styles, `<details>` disclosure rules |
@@ -38,7 +38,7 @@ Operator confirmed the first push is **"Website + skeleton"**.
 | Hero sequence | `HeroSequence` — FETCH/OBSERVE/COMPARE/WRITE reveal, declarative + reduced-motion correct |
 | **Worker: SSRF guard** | `evidence-worker/ssrf-guard.ts` — Rule 4, **complete**. 15 blocked IPv4 ranges, IPv6 + IPv4-mapped, per-hop re-check, `pinResolvedAddress` |
 | **Worker: exclusion list** | `policy-engine/exclusion.ts` — Rule 5, **complete**. All 5 identifier types, normalization, subdomain matching |
-| **Worker: spend ledger** | `policy-engine/spend-ledger.ts` — Rule 9, **complete**. Caps, no-retry-after-ambiguous, concurrency=1 |
+| **Worker: spend ledger** | `policy-engine/spend-ledger.ts` — Rule 9, **complete**. Caps, no-retry-after-ambiguous, concurrency=1, and the append-only log collapsed by `latestByPayment()` before anything is derived from it |
 | **Worker: exact decimal** | `policy-engine/decimal.ts` — BigInt micro-units. No float ever compares against a cap |
 | **Worker: audit ledger** | `audit-ledger/index.ts` — **complete**. Hash chain with canonical JSON, full re-walk verification |
 | **Worker: watchdog** | `watchdog/index.ts` — Rules 7 + 12, **complete**. State machine + business-inactivity alert |
@@ -91,21 +91,26 @@ reason rather than showing nothing.
 
 ## Next actions, in order
 
-1. **Commit and push; confirm CI goes green on GitHub.** All building happens in
-   the cloud — this machine must not run `npm install` or `next build`.
-2. Fix whatever CI reports. First run is expected to surface something.
-3. Operator connects the repo to Vercel; set `NEXT_PUBLIC_OBSERVED_API_URL`
-   later, once a worker exists.
-4. Write the `html` collector next — it is the demo's centrepiece and needs no
-   key. Build it on `assertPublicTarget` / `assertRedirectHop`, which are
-   already written.
-5. Then `tls` (simplest remaining), then `repo`, then `screenshot` (needs the
-   paid path).
-6. Registration day: get the agent ID, wallet, and attribution tag; send a tiny
+1. **Write the `html` collector.** It is the demo's centrepiece and needs no key
+   and no wallet. Build it on `assertPublicTarget` / `assertRedirectHop` and
+   `pinResolvedAddress`, which are already written — that is what makes this
+   collector safe to write before any payment path exists.
+2. Then `tls` (simplest remaining), then `repo`, then `screenshot` (the only one
+   that needs the paid path).
+3. Operator connects the repo to Vercel. The app already builds in CI, so this is
+   a configuration step, not a code step. `NEXT_PUBLIC_OBSERVED_API_URL` stays
+   unset until a worker is deployed.
+4. Registration day: get the agent ID, wallet, and attribution tag; send one tiny
    test transaction and verify the tag with `verifyTx` **before** any second
-   transaction.
-7. AskBots adapter last — the only piece that needs a live key, plus the day-one
+   transaction. Rule 8 has no backfill.
+5. AskBots adapter last — the only piece needing a live key, plus the day-one
    `curl` that resolves the daily-limit contradiction in spec Section 8.
+6. Optional housekeeping: `package-lock.json` is generated inside CI on every run
+   but never committed, so installs are not yet reproducible and CI still takes
+   the `npm install` branch rather than `npm ci`. Committing one needs either a
+   local `npm install` (forbidden on this machine) or a CI job with
+   `contents: write` that commits it back. Vercel will produce one on first
+   deploy, which is the cheapest route.
 
 ---
 
@@ -116,11 +121,20 @@ hash-verified artifact. **The project still cannot make that claim about
 itself** — no real evidence artifact exists yet, because no collector that
 touches the network has been written.
 
-What has changed this session: the machinery that *enforces* the claim is now
-real. The SSRF guard, the exclusion check, the spend caps, the claim validator
-and the hash chain are written and will refuse to operate incorrectly — they are
-not stubs that pretend. So the gap is now narrow and specific: **four collectors
-and two API calls**, not "the whole worker".
+Session 2 made the machinery that *enforces* the claim real. The SSRF guard, the
+exclusion check, the spend caps, the claim validator and the hash chain are
+written and will refuse to operate incorrectly; they are not stubs that pretend.
+
+Session 3 made the build **verified**. CI is green: all three workspaces
+typecheck under the real compiler, and `next build` produces a production build.
+Until now "it compiles" was an assumption, because this machine cannot run a
+build — it is now a fact GitHub asserts on every push, and it will stay asserted
+on every future push. Two compiler errors surfaced and were fixed; one of them
+was hiding a genuine logic bug (a permanently-wedged spend gate) that reading the
+file locally had not caught. See `MEMORY.md` decision 14.
+
+So the gap is now narrow and specific: **four collectors and two API calls**,
+not "the whole worker". The frontend is deployable as it stands.
 
 The frontend continues to ship with an explicit `RecordProvenance` type and a
 visible label on every non-live record. Nothing in the UI is presented as a real
