@@ -5,8 +5,9 @@ things or re-litigate settled decisions. `PROGRESS.md` says *what* is built.
 This file says *why*, and records the environment facts that are easy to
 forget.
 
-**Last updated:** 2026-09-12 (session 3 — CI green; html collector written. See
-decisions 14 and 15).
+**Last updated:** 2026-09-13 (session 4 — the `tls` collector and the link sweep
+landed, CI green, and a fetcher bug that would have made every observation
+silently empty. See decisions 16, 17 and 18).
 
 ---
 
@@ -295,6 +296,98 @@ Related: the header set handed to the model is an **allowlist**, not a denylist.
 A denylist of credential-shaped names fails open the first time a server invents
 a header nobody anticipated; an allowlist fails closed (Rule 11).
 
+### 16. Nothing here executes code, and that is now the project's biggest risk
+
+In `pinned-request.ts`, `requestOnce` never called `request.end()`. Node's
+`http.request()` only *queues* a request — nothing reaches the socket until
+`end()` is called — so the request was never sent, and the only thing that could
+settle the promise was the timeout.
+
+`fetchPinned` is the only fetcher in the project, so **the HTML collector could
+never have observed anything**. Every run would have produced a confident,
+hash-stamped, entirely empty observation reporting `unknown_timeout`. The code
+looked finished, had a careful comment above the exact line, and compiled
+cleanly.
+
+Why it survived three sessions: **nothing on this machine runs the worker**. The
+machine cannot build; CI typechecks and builds but never executes; there are no
+tests. Every "this is complete" in `PROGRESS.md` therefore means "this compiles",
+and nothing more.
+
+**How to apply:** prefer reading a module end-to-end over trusting that CI green
+means it works. Every CI failure so far has been hiding something that reading
+would have caught — decision 14 was a wedged spend gate, decision 17 below was a
+false finding — and this one was found only because adding POST support meant
+reading the fetcher line by line. When a claim about correctness is about to be
+written anywhere, ask what has actually *run*.
+
+**A concrete corollary:** `request.end()` is required even for a GET with no
+body. If a future fetcher is added, check for it.
+
+### 17. The TLS collector's tri-state, and the two things it must not claim
+
+The handshake runs against the address `assertPublicTarget` validated, with
+`servername` set to the real hostname, so SNI and certificate verification are
+unaffected while DNS re-resolution is impossible. `rejectUnauthorized` is never
+false: a handshake that completes over an invalid certificate is a lie, and this
+collector's whole job is not telling it.
+
+The mapping, and the two corrections made to it in session 4:
+
+- A failure unambiguously about the certificate the server **presented**
+  (expired, not yet valid, wrong hostname, self-signed, revoked) is `invalid`.
+- Chain-completeness failures (`UNABLE_TO_VERIFY_LEAF_SIGNATURE` and friends) are
+  deliberately **not**: they are usually a server that forgot its intermediate,
+  but they can equally be our stale trust store or a wrong clock. Rule 3 biases
+  toward under-claiming, so they are `unknown_*` with the code preserved.
+- **`ERR_SSL_WRONG_VERSION_NUMBER` was moved out of the finding set.** It means
+  "something is on 443 and it is not speaking TLS" — there is no certificate, so
+  by the rule above we did not get far enough to observe anything about one.
+  Calling it `invalid` also contradicted its own twin: nothing listening on 443
+  is `ECONNREFUSED`, which is `unknown_*`. Both mean "this host serves no TLS".
+  The cost decided it — `invalid` becomes "Detected" in the UI, so an ordinary
+  http-only project would have been published as having a bad certificate, on a
+  port (`TLS_PORT` = 443) that was **our** choice, not the target's claim.
+- `certificate_finding` was set from a flag that was also true when the guard
+  refused the host, so it asserted a certificate problem for failures that never
+  reached a certificate. It is now true only for certificate codes, with
+  `target_refused` alongside. Both are `invalid`; the review phrases them
+  differently, and the field exists so it does not have to re-derive which.
+
+**The general rule these two share:** when a status can be rendered as a finding
+in someone's published review, the tie goes to the weaker claim.
+
+### 18. The form POST is off, and it is one switch
+
+`SEND_FORM_POST` in `collectors/html-links.ts` is `false`. Every link and every
+form is probed with GET. A form is still detected, still checked and still
+citable: the artifact carries `declared_method: "POST"` with `method: "GET"` and
+`method_downgraded: true`, so the review says "probed with GET" instead of
+implying a submission happened. Nothing is hidden; only the side effect is
+withheld.
+
+The build spec's worked example is `POST /signup -> 404`, and reaching it means
+genuinely submitting a stranger's signup form. When one works, we have just
+signed up for it — on a real product belonging to someone else in this hackathon.
+The operator was given the choice and **declined to authorise it before
+understanding it**, which is the correct order for this decision. The switch
+should only be flipped with the demo's target sites in front of you.
+
+The fence is already built for whenever it is: same-site actions only (identical
+hostnames or a subdomain relationship — deliberately strict, because a
+"last two labels" rule would treat `a.co.uk` and `b.co.uk` as one site and POST
+to a stranger), an always-empty body, and **a POST never follows a redirect**,
+because a 3xx after a POST means it was accepted and did something.
+
+**If it is flipped on, `apps/web/lib/sample.ts` must flip with it** — the sample's
+headline claim reads `HTTP 404 on POST /signup`.
+
+Related: the link sweep strips `<script>`, `<style>` and comments before
+scanning. A script containing the literal text `"<a href=/signup>"` would
+otherwise be swept as a link, fail, and be published as a broken link on
+somebody's project — a fabricated finding, which is the one thing this codebase
+must never produce.
+
 ---
 
 ## Rules that are easy to violate by accident
@@ -302,7 +395,7 @@ a header nobody anticipated; an allowlist fails closed (Rule 11).
 | Rule | Where it is enforced |
 |---|---|
 | 3 — tri-state evidence | `shared-types/src/evidence.ts` (`isConclusive()` is the only gate for a claim); `review-generator/validateClaims()` downgrades any claim asserting against an `unknown_*` artifact |
-| 4 — SSRF guard | `worker/src/evidence-worker/ssrf-guard.ts` for the rules, `pinned-request.ts` for the fetcher that actually obeys them. **Both complete.** Re-check on **every redirect hop** via `assertRedirectHop`; connect to `pinResolvedAddress()`, never re-resolve. No `fetch`, no `redirect: 'follow'` — see decision 15 |
+| 4 — SSRF guard | `worker/src/evidence-worker/ssrf-guard.ts` for the rules, `pinned-request.ts` for the fetcher that actually obeys them. **Both complete.** Re-check on **every redirect hop** via `assertRedirectHop`; connect to `pinResolvedAddress()`, never re-resolve. No `fetch`, no `redirect: 'follow'` — see decision 15. A POST never follows a redirect — decision 18 |
 | 5 — exclusion before spend | `worker/src/policy-engine/exclusion.ts` + `evaluateProject()`. The branch order in `evaluateProject` IS the policy: exclusion is checked before a budget is ever consulted |
 | 8 — attribution tag | `payment-gate.ts` `attributionTagOrRefuse()`. **No backfill** — refuse rather than spend untagged |
 | 9 — spend caps | `policy-engine/spend-ledger.ts` + `decimal.ts`. `ambiguous_no_retry` is counted **against** the budget and never retried; the append-only log is collapsed through `latestByPayment()` before any figure is derived from it |
