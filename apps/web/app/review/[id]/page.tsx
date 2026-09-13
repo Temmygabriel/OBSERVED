@@ -59,6 +59,19 @@ function artifactFor(
   );
 }
 
+/**
+ * The first artifact from a collector.
+ *
+ * This is used for the checklist rows, which report one duration per check, and
+ * it is only correct because of an ordering guarantee on the worker side: the
+ * HTML collector emits the PAGE artifact first and its link artifacts after, and
+ * the orchestrator preserves that order. Taking the first `html` artifact is
+ * therefore the page.
+ *
+ * If that order ever changes, this silently starts reporting a link's timing as
+ * the page's. The fix then is to select by artifact id (`ev-<session>-html`)
+ * rather than by position.
+ */
 function firstOfCollector(
   evidence: EvidenceArtifact[],
   collector: CollectorKind,
