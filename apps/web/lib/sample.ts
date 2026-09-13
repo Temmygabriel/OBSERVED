@@ -101,9 +101,33 @@ const EVIDENCE_PAGE: EvidenceArtifact = {
     '3f786850e387550fdab836ed7e6dc881de23001b8f2a5b6a2f0e6f9c1c7a1d40',
   raw_ref: 'sample://raw/page.html',
   metadata: {
+    method: 'GET',
     request_path: '/',
+    final_url: `${TARGET_URL}/`,
     status_code: 200,
     content_type: 'text/html; charset=utf-8',
+    is_html: true,
+    resolved_ip: '203.0.113.10',
+    redirect_chain: [],
+    redirect_count: 0,
+    body_bytes: 18422,
+    body_truncated: false,
+    title: 'Example Project — ship faster',
+    meta_description: 'A sample project used to demonstrate Observed.',
+    html_lang: 'en',
+    has_viewport_meta: true,
+    hsts: 'max-age=31536000',
+    // The review screen reads this for the "Live page" checklist row.
+    elapsed_ms: 316,
+    // The link sweep's accounting. Its results are separate artifacts, so only
+    // the counts belong on the page record.
+    links_found: 9,
+    links_checked: 4,
+    links_skipped_over_cap: 3,
+    links_skipped_unsupported: 1,
+    links_skipped_self: 1,
+    links_deduplicated: 0,
+    links_method_downgraded: 1,
   },
   provider_request_id: null,
 };
@@ -121,11 +145,24 @@ const EVIDENCE_TLS: EvidenceArtifact = {
     '89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f171d5c1',
   raw_ref: 'sample://raw/tls.json',
   metadata: {
-    subject: 'CN=example-project.xyz',
-    issuer: 'CN=Sample Issuer CA',
-    not_after: '2027-01-04T00:00:00.000Z',
-    sha256_fingerprint:
+    port: 443,
+    protocol: 'TLSv1.3',
+    cipher: 'TLS_AES_256_GCM_SHA384',
+    authorized: true,
+    authorization_error: null,
+    subject_cn: 'example-project.xyz',
+    issuer_cn: 'Sample Issuer CA',
+    issuer_org: 'Sample Issuer',
+    valid_from: '2026-01-04T00:00:00.000Z',
+    valid_to: '2027-01-04T00:00:00.000Z',
+    days_until_expiry: 113,
+    within_validity_window: true,
+    fingerprint_sha256:
       'A1:B2:C3:D4:E5:F6:07:18:29:3A:4B:5C:6D:7E:8F:90:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00',
+    serial_number: '0A1B2C3D4E5F60718293A4B5C6D7E8F9',
+    subject_alt_names: 'DNS:example-project.xyz, DNS:www.example-project.xyz',
+    // The review screen reads this for the "TLS" checklist row.
+    elapsed_ms: 412,
   },
   provider_request_id: null,
 };
@@ -181,7 +218,7 @@ const EVIDENCE_REPO: EvidenceArtifact = {
 const CLAIM_SIGNUP: ReviewClaim = {
   claim_id: 'claim-01',
   evidence_artifact_id: 'ev-03-signup',
-  exact_locator: 'response.status',
+  exact_locator: 'status_code',
   observation: 'HTTP 404 on POST /signup',
   inference: 'the signup route is unreachable',
   action: 'restore the route, or update the link that points to it',
@@ -191,7 +228,7 @@ const CLAIM_SIGNUP: ReviewClaim = {
 const CLAIM_TLS: ReviewClaim = {
   claim_id: 'claim-02',
   evidence_artifact_id: 'ev-02-tls',
-  exact_locator: 'certificate.not_after',
+  exact_locator: 'valid_to',
   observation: 'TLS certificate valid, CN=example-project.xyz',
   inference: 'the certificate is current and matches the host',
   action: '',

@@ -130,7 +130,7 @@ export async function collectEvidence(input: CollectInput): Promise<CollectResul
     }
 
     try {
-      artifacts.push(await runCollector(collector, input, now, timeoutMs));
+      artifacts.push(...(await runCollector(collector, input, now, timeoutMs)));
     } catch (error) {
       // Our own bugs must not become facts about the target.
       if (
