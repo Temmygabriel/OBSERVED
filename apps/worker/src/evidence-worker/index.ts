@@ -178,7 +178,11 @@ async function runCollector(
  * the repository. Keeping it in one named place means the /readyz output is
  * either right or visibly stale, and never quietly optimistic.
  */
-export const IMPLEMENTED_COLLECTORS: readonly CollectorKind[] = ['dns', 'html'];
+export const IMPLEMENTED_COLLECTORS: readonly CollectorKind[] = [
+  'dns',
+  'html',
+  'tls',
+];
 
 export type { Collector, CollectorContext, PaidFetchResult };
 export { CollectorNotImplementedError, MissingPaidFetchError };

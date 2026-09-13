@@ -37,8 +37,8 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { TextDecoder } from 'node:util';
 import type { EvidenceArtifact } from '@observed/shared-types';
 import { BlockedTargetError, ResolutionFailedError } from '../ssrf-guard';
+import { ProbeTimeoutError } from '../probe-timeout';
 import {
-  RequestTimeoutError,
   TooManyRedirectsError,
   fetchPinned,
   type PinnedResponse,
@@ -214,7 +214,7 @@ function failureArtifact(
     resolved_ip: null,
     status: isTargetFinding
       ? 'invalid'
-      : classifyFailure(error, error instanceof RequestTimeoutError),
+      : classifyFailure(error, error instanceof ProbeTimeoutError),
     // No body was read, so the hash covers what we actually acted on. It is
     // still a real hash of a real input, which is what makes the record
     // verifiable even when the fetch failed.

@@ -29,6 +29,7 @@
 
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
+import { ProbeTimeoutError } from './probe-timeout';
 import {
   MAX_REDIRECT_HOPS,
   assertPublicTarget,
@@ -44,13 +45,6 @@ export const USER_AGENT =
 
 /** 512 KiB. Past this it is not a page anyone is going to read. */
 export const DEFAULT_MAX_BODY_BYTES = 512 * 1024;
-
-export class RequestTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'RequestTimeoutError';
-  }
-}
 
 export class TooManyRedirectsError extends Error {
   readonly hops: number;
@@ -199,7 +193,7 @@ function requestOnce(
     timer = setTimeout(() => {
       finish(() =>
         reject(
-          new RequestTimeoutError(
+          new ProbeTimeoutError(
             `no response from ${url.host} within ${timeoutMs}ms`,
           ),
         ),
@@ -236,7 +230,7 @@ export async function fetchPinned(
   for (;;) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      throw new RequestTimeoutError(
+      throw new ProbeTimeoutError(
         `gave up after ${options.timeoutMs}ms across ${redirectChain.length} redirect(s)`,
       );
     }
