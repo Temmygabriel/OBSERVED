@@ -121,10 +121,22 @@ function textOrNull(value: unknown): string | null {
   return String(value);
 }
 
-function certificateField(value: string | undefined): string | null {
+/**
+ * A certificate field, normalized to a string or `null`.
+ *
+ * The `string[]` arm is not defensive padding: Node types the DN fields on
+ * `subject` and `issuer` as `string | string[]`, because a certificate may carry
+ * the same attribute more than once — two `OU` values is the common case. A
+ * multi-valued field is joined rather than truncated to its first entry, so the
+ * record shows what the certificate actually said.
+ */
+function certificateField(
+  value: string | string[] | undefined,
+): string | null {
   if (value === undefined) return null;
-  const text = value.trim();
-  return text === '' ? null : text;
+  const text: string = Array.isArray(value) ? value.join(', ') : value;
+  const trimmed = text.trim();
+  return trimmed === '' ? null : trimmed;
 }
 
 interface TlsObservation {
