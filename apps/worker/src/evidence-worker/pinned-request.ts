@@ -75,6 +75,16 @@ export interface FetchOptions {
   timeoutMs: number;
   maxBodyBytes?: number;
   maxRedirects?: number;
+  /**
+   * `POST` is used for exactly one thing: probing whether a form's action URL
+   * exists. See `fetchPinned` for the redirect rule that makes it safe.
+   */
+  method?: 'GET' | 'POST';
+  /**
+   * Always empty in practice. A probe asks "does this route exist", never
+   * "what happens if someone signs up", so no field values are ever sent.
+   */
+  body?: Uint8Array;
 }
 
 interface SingleHop {
@@ -102,6 +112,8 @@ function requestOnce(
   target: ValidatedTarget,
   timeoutMs: number,
   maxBodyBytes: number,
+  method: 'GET' | 'POST',
+  body: Uint8Array | undefined,
 ): Promise<SingleHop> {
   return new Promise<SingleHop>((resolve, reject) => {
     const { url } = target;
@@ -126,7 +138,7 @@ function requestOnce(
       host: address,
       port,
       path: `${url.pathname}${url.search}`,
-      method: 'GET',
+      method,
       headers: {
         // We connect by address but speak by name, so virtual hosts work.
         Host: url.host,
@@ -136,6 +148,12 @@ function requestOnce(
         // No connection reuse: a pooled socket outlives the validation that
         // justified it.
         Connection: 'close',
+        ...(body === undefined
+          ? {}
+          : {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Content-Length': String(body.byteLength),
+            }),
       },
       // TLS verifies the certificate against the real hostname, never the IP.
       ...(isHttps ? { servername: url.hostname } : {}),
@@ -202,6 +220,14 @@ function requestOnce(
     }, timeoutMs);
 
     request.on('error', (error: Error) => finish(() => reject(error)));
+
+    // `http.request` only QUEUES the request — nothing reaches the socket until
+    // `end()` is called. Without this line the request is never sent at all, and
+    // the only thing that can settle this promise is the timeout above, so every
+    // fetch would report `unknown_timeout` and look like a network problem
+    // rather than a missing call.
+    if (body !== undefined) request.write(Buffer.from(body));
+    request.end();
   });
 }
 
@@ -212,6 +238,13 @@ function requestOnce(
  * returning an artifact: whether a refusal is a finding about the target or a
  * gap in our own network is a Rule 3 decision, and it belongs to the collector
  * that knows what it was trying to observe — not here.
+ *
+ * A `POST` NEVER FOLLOWS A REDIRECT, and that rule is load-bearing. The only
+ * POST this codebase sends is "does this form's action URL exist", asked with an
+ * empty body. A 3xx answer means the request was accepted and did something;
+ * re-sending it to the `Location` would do that thing a second time, against an
+ * endpoint the caller never chose and never validated as a target. So the
+ * redirect status itself becomes the observation and the chain stops there.
  */
 export async function fetchPinned(
   rawUrl: string,
@@ -222,6 +255,7 @@ export async function fetchPinned(
   const deadline = startedAt + options.timeoutMs;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const maxRedirects = options.maxRedirects ?? MAX_REDIRECT_HOPS;
+  const method = options.method ?? 'GET';
 
   // Rule 4, hop zero: validate AND resolve before any socket is opened.
   let target = await assertPublicTarget(rawUrl, resolve);
@@ -235,11 +269,20 @@ export async function fetchPinned(
       );
     }
 
-    const hop = await requestOnce(target, remaining, maxBodyBytes);
+    const hop = await requestOnce(
+      target,
+      remaining,
+      maxBodyBytes,
+      method,
+      options.body,
+    );
     const location = firstHeaderValue(hop.headers['location']);
 
     const isRedirect =
-      hop.status_code >= 300 && hop.status_code < 400 && location !== null;
+      method === 'GET' &&
+      hop.status_code >= 300 &&
+      hop.status_code < 400 &&
+      location !== null;
 
     if (!isRedirect) {
       return {
