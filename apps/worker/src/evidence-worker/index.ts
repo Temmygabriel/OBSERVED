@@ -109,7 +109,7 @@ export async function collectEvidence(input: CollectInput): Promise<CollectResul
       const isTargetRefusal = !(error instanceof ResolutionFailedError);
 
       if (kind === 'dns' || !isTargetRefusal) {
-        artifacts.push(await runCollector(collector, input, now, timeoutMs));
+        artifacts.push(...(await runCollector(collector, input, now, timeoutMs)));
       } else {
         skipped.push({
           collector: kind,
@@ -154,7 +154,7 @@ async function runCollector(
   input: CollectInput,
   now: () => Date,
   timeoutMs: number,
-): Promise<EvidenceArtifact> {
+): Promise<EvidenceArtifact[]> {
   const paidFetch = input.paid_fetches?.[collector.kind];
 
   const context: CollectorContext = {
@@ -167,7 +167,10 @@ async function runCollector(
     ...(paidFetch ? { paid_fetch: paidFetch } : {}),
   };
 
-  return collector.collect(context);
+  // Normalized here so a collector can return either shape, and every caller
+  // below stays a plain push. Only `html` currently returns more than one.
+  const produced = await collector.collect(context);
+  return Array.isArray(produced) ? produced : [produced];
 }
 
 /**

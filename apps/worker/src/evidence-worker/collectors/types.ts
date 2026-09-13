@@ -56,7 +56,19 @@ export interface Collector {
   version: string;
   /** True for `screenshot`, which runs against a `buy`-purchased endpoint. */
   requires_paid_fetch: boolean;
-  collect: (context: CollectorContext) => Promise<EvidenceArtifact>;
+  /**
+   * One observation pass.
+   *
+   * Returns one artifact, or SEVERAL when a single pass has parts that must not
+   * share a status. The HTML collector is the only one that does: its link sweep
+   * produces an artifact per link, because folding "three links are broken" into
+   * the page's own status would destroy the tri-state. A page can be perfectly
+   * live while three of its links are unreachable, and the two facts are
+   * separately citable.
+   */
+  collect: (
+    context: CollectorContext,
+  ) => Promise<EvidenceArtifact | EvidenceArtifact[]>;
 }
 
 /**

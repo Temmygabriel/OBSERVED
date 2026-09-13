@@ -44,6 +44,7 @@ import {
   type PinnedResponse,
 } from '../pinned-request';
 import { classifyFailure, type Collector, type CollectorContext } from './types';
+import { sweepLinks } from './html-links';
 
 const VERSION = '0.1.0';
 
@@ -238,7 +239,7 @@ export const htmlCollector: Collector = {
   version: VERSION,
   requires_paid_fetch: false,
 
-  async collect(context: CollectorContext): Promise<EvidenceArtifact> {
+  async collect(context: CollectorContext): Promise<EvidenceArtifact[]> {
     const observedAt = context.now().toISOString();
     const startedAt = Date.now();
 
@@ -254,7 +255,7 @@ export const htmlCollector: Collector = {
 
     const outcome = await fetchPage(context);
     if (!outcome.ok) {
-      return failureArtifact(context, base, outcome.failure, startedAt);
+      return [failureArtifact(context, base, outcome.failure, startedAt)];
     }
 
     const { response } = outcome;
@@ -274,7 +275,24 @@ export const htmlCollector: Collector = {
     const viewport = isHtml ? metaContent(html, 'viewport') : null;
     const lang = isHtml ? htmlLang(html) : null;
 
-    return {
+    // The page's own duration, captured before the sweep runs. The "Live page"
+    // row on the review screen reads this number, and charging the page for the
+    // time spent fetching twelve links would misreport what it measures.
+    const pageElapsedMs = Date.now() - startedAt;
+
+    // The link sweep, as a genuinely separate pass. It reuses THIS response —
+    // re-fetching the page would be a second observation of a different moment,
+    // and the two would not be comparable under one timestamp.
+    const sweep = isHtml
+      ? await sweepLinks({
+          context,
+          pageUrl: response.final_url,
+          html,
+          observedAt,
+        })
+      : null;
+
+    const pageArtifact: EvidenceArtifact = {
       ...base,
       // Rule 4 evidence: the exact address the socket connected to.
       resolved_ip: response.resolved_ip,
@@ -308,8 +326,16 @@ export const htmlCollector: Collector = {
         has_viewport_meta: viewport !== null,
         hsts: firstHeaderValue(response.headers['strict-transport-security']),
         headers: pickHeaders(response.headers),
-        elapsed_ms: Date.now() - startedAt,
+        // Only the ACCOUNTING of the sweep lives on the page record. The results
+        // themselves are separate artifacts with their own statuses, so that a
+        // broken link can never be read as a fact about the page.
+        ...(sweep?.stats ?? {}),
+        sweep_elapsed_ms: sweep === null ? null : Date.now() - startedAt - pageElapsedMs,
+        elapsed_ms: pageElapsedMs,
       },
     };
+
+    // One pass, many artifacts. Every link's status is its own.
+    return [pageArtifact, ...(sweep?.artifacts ?? [])];
   },
 };
