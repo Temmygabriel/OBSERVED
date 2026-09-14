@@ -63,6 +63,27 @@ export function encodeCall(signature, ...hexArgs) {
 /** Hex string (with 0x) for JSON-RPC, which wants calldata as text. */
 export const callDataHex = (data) => '0x' + data.toString('hex');
 
+/** ABI-encode a uint256 argument. Returns hex without a 0x prefix. */
+export function encodeUintArg(value) {
+  const n = BigInt(value);
+  if (n < 0n) throw new Error('uint256 cannot be negative');
+  if (n >= 1n << 256n) throw new Error('value does not fit in uint256');
+  return n.toString(16).padStart(64, '0');
+}
+
+/**
+ * Decode a single `string` return value: offset(32) || length(32) || bytes.
+ * Used to read back what the registry stored, rather than trusting that the
+ * argument we sent is the argument it kept.
+ */
+export function decodeString(hex) {
+  const data = Buffer.from(hex.replace(/^0x/, ''), 'hex');
+  if (data.length < 64) throw new Error('return value is too short to hold a string');
+  const offset = Number(BigInt('0x' + data.subarray(0, 32).toString('hex')));
+  const length = Number(BigInt('0x' + data.subarray(offset, offset + 32).toString('hex')));
+  return data.subarray(offset + 32, offset + 32 + length).toString('utf8');
+}
+
 /**
  * Structural check on `register(string)`. This does not prove the encoding is
  * right in the abstract — it proves the calldata is shaped the way the contract

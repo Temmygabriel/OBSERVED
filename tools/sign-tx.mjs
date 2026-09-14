@@ -60,7 +60,14 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import process from 'node:process';
-import { callDataHex, encodeCall, encodeStringArg, selftest as abiSelftest } from './abi.mjs';
+import {
+  callDataHex,
+  decodeString,
+  encodeCall,
+  encodeStringArg,
+  encodeUintArg,
+  selftest as abiSelftest,
+} from './abi.mjs';
 import { keccak256, toChecksumAddress } from './keccak256.mjs';
 
 const CELO_MAINNET_RPC = 'https://forno.celo.org';
@@ -635,6 +642,103 @@ async function mint(walletPath, send) {
 }
 
 // ---------------------------------------------------------------------------
+// Reading back what a mint actually did
+// ---------------------------------------------------------------------------
+
+const TRANSFER_TOPIC =
+  '0x' + keccak256(Buffer.from('Transfer(address,address,uint256)', 'ascii')).toString('hex');
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The agentId is the ERC-721 token id, which the registry emits as the THIRD
+ * indexed topic of the Transfer event. A Transfer carrying an id has four
+ * topics (signature, from, to, id); a Transfer without one has three. Reading
+ * topics[3] of a three-topic log is the classic way to get `undefined` and
+ * mistake it for a number, so the length is checked first.
+ */
+function findMintedTokenId(receipt) {
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== IDENTITY_REGISTRY.toLowerCase()) continue;
+    if (log.topics[0] !== TRANSFER_TOPIC) continue;
+    if (log.topics.length !== 4) continue;
+    return { tokenId: BigInt(log.topics[3]), from: log.topics[1], to: log.topics[2] };
+  }
+  return null;
+}
+
+async function waitForReceipt(txHash, attempts = 60) {
+  for (let i = 0; i < attempts; i += 1) {
+    const found = await rpc('eth_getTransactionReceipt', [txHash]);
+    if (found) return found;
+    await sleep(2000);
+  }
+  throw new Error('no receipt after two minutes; the transaction may still be pending');
+}
+
+async function receipt(txHash) {
+  const found = await waitForReceipt(txHash);
+  const succeeded = found.status === '0x1';
+  const gasUsed = BigInt(found.gasUsed);
+  const effectivePrice = BigInt(found.effectiveGasPrice ?? 0);
+  const actualCost = gasUsed * effectivePrice;
+
+  console.log(`status        ${succeeded ? 'SUCCESS' : 'REVERTED'}`);
+  console.log(`block         ${BigInt(found.blockNumber)}`);
+  console.log(`gas used      ${gasUsed}`);
+  console.log(`price paid    ${Number(effectivePrice) / 1e9} gwei`);
+  console.log(`actual cost   ${formatCelo(actualCost)} CELO`);
+
+  if (!succeeded) {
+    console.log('');
+    console.log('The transaction reverted: the fee was spent and nothing was minted.');
+    process.exit(1);
+  }
+
+  const minted = findMintedTokenId(found);
+  if (!minted) {
+    console.log('');
+    console.log('No Transfer log from the identity registry in this receipt.');
+    console.log('Nothing was minted, or the registry address has changed.');
+    process.exit(1);
+  }
+
+  const chainIdHex = await rpc('eth_chainId', []);
+  console.log('');
+  console.log(`agentId       ${minted.tokenId}`);
+  console.log(`owner (log)   ${toChecksumAddress(minted.to.slice(26))}`);
+  console.log(`chainId       ${BigInt(chainIdHex)}`);
+  console.log('');
+
+  // The event says one thing; the contract's own storage says another. Ask the
+  // contract, because the event alone would not reveal a registry that recorded
+  // a different owner or URI than the one we sent.
+  const call = async (signature, ...args) =>
+    rpc('eth_call', [
+      {
+        to: IDENTITY_REGISTRY,
+        data: callDataHex(encodeCall(signature, ...args)),
+      },
+      'latest',
+    ]);
+
+  const owner = await call('ownerOf(uint256)', encodeUintArg(minted.tokenId));
+  const ownerAddress = toChecksumAddress(owner.slice(26));
+  const stored = decodeString(await call('tokenURI(uint256)', encodeUintArg(minted.tokenId)));
+
+  console.log(`ownerOf       ${ownerAddress}`);
+  console.log(`tokenURI      ${stored}`);
+  console.log('');
+  console.log(
+    `owner matches the event   ${ownerAddress === toChecksumAddress(minted.to.slice(26)) ? 'YES' : 'NO'}`,
+  );
+  console.log(`uri matches what we sent  ${stored === AGENT_URI ? 'YES' : 'NO'}`);
+  console.log('');
+  console.log(`explorer      https://celoscan.io/tx/${txHash}`);
+  console.log(`agent card    https://8004scan.io/agents/celo/${minted.tokenId}`);
+}
+
+// ---------------------------------------------------------------------------
 
 const [command, ...rest] = process.argv.slice(2);
 
@@ -647,10 +751,14 @@ try {
       : null;
     if (!walletPath) throw new Error('mint requires --wallet <wallet.json>');
     await mint(walletPath, rest.includes('--send'));
+  } else if (command === 'receipt') {
+    if (!rest[0]) throw new Error('receipt requires a transaction hash');
+    await receipt(rest[0]);
   } else {
     console.log('usage:');
     console.log('  node tools/sign-tx.mjs selftest');
     console.log('  node tools/sign-tx.mjs mint --wallet <wallet.json> [--send]');
+    console.log('  node tools/sign-tx.mjs receipt <txHash>');
     process.exit(1);
   }
 } catch (error) {

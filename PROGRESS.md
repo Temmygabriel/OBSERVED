@@ -1,6 +1,6 @@
 # Observed — Build Progress
 
-**Last updated:** 2026-09-14 (session 5)
+**Last updated:** 2026-09-14 (session 5, continued)
 **Deadline:** 2026-09-21, 09:00 GMT
 **Days remaining at last update:** 7
 
@@ -102,11 +102,23 @@ were wrong and are corrected below — see "What the recon changed".
 
 The chain has a strict order, because each item needs the one above it:
 
+**Cleared 2026-09-14 (session 5).** Items 1–3 are done:
+
+- Wallet `0x556Ff7dD2bE1B504495288295Ad7cc3d414dd2c0`, key at
+  `~/.observed-secrets/wallet.json` — **outside the repo**, so `git add .`
+  cannot reach it.
+- Funded with 0.51 CELO mainnet.
+- **ERC-8004 identity minted: `agentId` 9849**, tx
+  `0x742fe0003e7b95e0d5c86e4cf1fabf6381aaffdf615df75cb81dd46f4c7f150a`,
+  block 77509666, cost **0.04067577 CELO**. `ownerOf(9849)` and
+  `tokenURI(9849)` were both read back from the contract, not inferred from the
+  event log, and both match.
+
 | # | Needed | Blocks | Where it comes from |
 |---|---|---|---|
-| 1 | **Celo mainnet wallet** (address) | Everything — `agentWalletAddress` is `requiredAt: registration` | Create it. MetaMask or `cast wallet new` |
-| 2 | **Real CELO on mainnet for gas** | The ERC-8004 mint, and every mainnet tx | Buy CELO, withdraw on the Celo network. Testnet counts for **nothing** in every track |
-| 3 | **ERC-8004 Agent ID URL** | Registration — `erc8004Url` is `requiredAt: registration` | Mint an ERC-8004 agent identity on Celo mainnet first. **Not issued by registering** |
+| ~~1~~ | ~~Celo mainnet wallet~~ | — | **Done.** Address above |
+| ~~2~~ | ~~Real CELO on mainnet~~ | — | **Done.** 0.51 CELO |
+| ~~3~~ | ~~ERC-8004 Agent ID~~ | — | **Done.** `agentId` 9849 on Celo mainnet |
 | 4 | **Personal Telegram @handle** | Registration — `telegram` is `requiredAt: registration` | Yours |
 | 5 | **Celo Builders registration + `attributionTag`** | Rule 8, and the whole submission | `PUT /submissions/me` with the registration-stage fields. Tag is `celo_` + 12 hex, derived from the repo slug, **locked at first save** |
 | 6 | **AskBots API key** | AskBots Adapter, any real review submission | `POST askbots.ai/api/auth/openclaw`. Self-serve, returned **once**, unrecoverable — re-registering mints a *new identity* and discards rating and earnings |
@@ -115,6 +127,42 @@ The chain has a strict order, because each item needs the one above it:
 | 9 | **Vercel account** | Public URL for the frontend | Operator chose Vercel |
 | — | ~~Chainstack Growth plan~~ | Nothing | **Optional.** `forno.celo.org` is free and explicitly fine. The coupon path normally means entering payment details first — do not do this |
 | — | `gh` CLI not installed | Convenience only — plain `git` push works | |
+
+### The unattributed first transaction — Rule 8, and what it actually cost
+
+**The mint at `0x742fe000…` carries no attribution tag.** It was sent before the
+tag existed, and the live skill doc is explicit that this is not recoverable:
+*"There is no way to tag a transaction after the fact and no way to backfill."*
+One transaction will not be credited on the leaderboard.
+
+The rule, from the live doc: *"Your assigned tag must be in every transaction."*
+It names no exception for any transaction type or network, and *"Leaderboards
+only credit the `attributionTag` returned at registration."*
+
+**This was flagged late, and the flag belonged before the send.** The tag was
+recorded as a Rule 8 concern in the blocker chain, but it was not connected to
+the specific fact that the identity mint would itself be the first mainnet
+transaction. That connection was ours to make before broadcasting, not after.
+
+**It was also unsatisfiable as written.** The tag is *returned by registration* —
+it is derived from the `owner/repo` slug and locked at the first save, so it
+cannot be computed in advance. Registration is documented as wanting the
+ERC-8004 ID. The ERC-8004 ID comes from the mint. So the identity mint
+necessarily precedes the tag for every team in the event, and the blanket rule
+cannot be met by the one transaction that creates the identity.
+
+**What this does not affect.** The identity is real and correct: `agentId` 9849
+is owned by the agent wallet and its `tokenURI` resolves. No funds were
+misdirected and no claim in the submission depends on that transaction being
+credited.
+
+**What it changes.** The tag moves to the top of the critical path. Every further
+mainnet transaction sent before registration is uncredited, so registration is
+now urgent rather than merely next. `tools/sign-tx.mjs` must also learn to append
+the ERC-8021 suffix (`toDataSuffix(['observed', '<tag>'])`) to calldata before it
+sends anything else, and the first tagged transaction must be decoded with
+`verifyTx` — the doc's own words: *"Checking once, early, is the difference
+between a wiring mistake costing one transaction and costing the whole event."*
 
 ### What the recon changed
 
@@ -155,8 +203,13 @@ reason rather than showing nothing.
 
 ## Next actions, in order
 
-1. ~~Write the `tls` collector.~~ **Done, session 4.** CI green.
-2. ~~Then the `html` link sweep.~~ **Done, session 4.** CI green.
+1. **Get the `attributionTag`, which means registering.** It is now the top of the
+   critical path, because every mainnet transaction sent before it exists is
+   uncredited. Blocked on the operator's Telegram handle (item 4).
+2. **Then wire ERC-8021 into `tools/sign-tx.mjs`** before it sends anything else:
+   `toDataSuffix(['observed', '<tag>'])` appended to calldata, then decode the
+   first tagged transaction to confirm the tag is present. Rule 8 has no backfill,
+   and the mint already spent the one transaction that could not carry it.
 3. **Write the `repo` collector** — the next one, and it needs neither a key nor
    a wallet, because `api.github.com` is a public API. The Rule 3 trap is
    already documented in the stub and is the whole job: GitHub's unauthenticated
@@ -165,22 +218,43 @@ reason rather than showing nothing.
    project. 403/429 must map to `unknown_*`. A missing repo URL must produce NO
    artifact at all — "you did not give us a repo" is not a finding.
 4. Then `screenshot` — the only collector that needs the paid path, so it waits
-   for a wallet. Everything it does *after* the bytes arrive is already written
-   and testable: hash, store, map a non-2xx provider response.
-4. Operator connects the repo to Vercel. The app already builds in CI, so this is
+   for `buy` closed-beta access. Everything it does *after* the bytes arrive is
+   already written and testable: hash, store, map a non-2xx provider response.
+5. Operator connects the repo to Vercel. The app already builds in CI, so this is
    a configuration step, not a code step. `NEXT_PUBLIC_OBSERVED_API_URL` stays
    unset until a worker is deployed.
-5. Registration day: get the agent ID, wallet, and attribution tag; send one tiny
-   test transaction and verify the tag with `verifyTx` **before** any second
-   transaction. Rule 8 has no backfill.
-6. AskBots adapter last — the only piece needing a live key, plus the day-one
-   `curl` that resolves the daily-limit contradiction in spec Section 8.
+6. AskBots adapter last — the only piece needing a live key.
 7. Optional housekeeping: `package-lock.json` is generated inside CI on every run
    but never committed, so installs are not yet reproducible and CI still takes
    the `npm install` branch rather than `npm ci`. Committing one needs either a
    local `npm install` (forbidden on this machine) or a CI job with
    `contents: write` that commits it back. Vercel will produce one on first
    deploy, which is the cheapest route.
+
+### Tools built this session
+
+Three files, all with self-tests that run before they touch anything:
+
+| File | What it does | How it is proven |
+|---|---|---|
+| `tools/keccak256.mjs` | keccak-256, EVM selectors, EIP-55 addresses | Published vectors incl. a full key→address pipeline |
+| `tools/abi.mjs` | Builds and decodes calldata for the calls used here | Structural checks on `register(string)` |
+| `tools/sign-tx.mjs` | Builds, signs, verifies, broadcasts, and reads back transactions | Byte-for-byte reproduction of the EIP-155 published signature |
+
+`make-wallet.mjs` generates a wallet and prints only the address. `celo-rpc.mjs`
+estimates cost and reads balances with no key at all.
+
+**Two silent bugs were caught by these tests, both of which would have shipped
+without them:**
+
+- Node's `crypto.sign(null, digest, key)` hashes the digest a *second* time, so
+  the signature covers the wrong message and recovers to the wrong address. The
+  self-test failed loudly instead of producing a plausible, worthless signature.
+- `Buffer.from('0x…', 'hex')` returns **zero bytes** rather than throwing. The
+  first mint attempt therefore called `register(string)` with no argument and was
+  reverted by the chain — correct string, silently emptied on conversion.
+  Calldata is now built in exactly one place, which returns a `Buffer` so the
+  prefix can only be stripped once.
 
 ---
 
@@ -232,6 +306,15 @@ example and the behaviour with POST enabled.
 The gap is now narrow and specific: **one collector (`repo`), one screenshot,
 and two API calls** — not "the whole worker". The frontend is deployable as it
 stands.
+
+Session 5 minted the identity — `agentId` 9849 on Celo mainnet, owned by the
+agent wallet, `tokenURI` read back from the contract — and built the signer that
+did it, proven against the EIP-155 published vector rather than merely exercised.
+It also cost one transaction's worth of attribution, for the reason recorded
+above. The honest reading is that the tooling is now trustworthy in a way it was
+not: two bugs that would have shipped silently were caught by tests written
+specifically to catch them, and the cost of the third mistake was one
+uncredited transaction rather than a lost submission.
 
 The frontend continues to ship with an explicit `RecordProvenance` type and a
 visible label on every non-live record. Nothing in the UI is presented as a real
