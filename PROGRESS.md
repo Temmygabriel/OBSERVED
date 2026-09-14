@@ -1,8 +1,8 @@
 # Observed — Build Progress
 
-**Last updated:** 2026-09-13 (session 4)
+**Last updated:** 2026-09-14 (session 5)
 **Deadline:** 2026-09-21, 09:00 GMT
-**Days remaining at last update:** 8
+**Days remaining at last update:** 7
 
 > This file is the living state of the build. It is updated at the end of every
 > working session. If you are picking this project up cold, read this file
@@ -96,15 +96,56 @@ hiding something.
 
 These cannot be worked around in code. Everything else is unblocked.
 
-| Blocker | Blocks | Notes |
-|---|---|---|
-| No Celo Builders registration | Rules 8, 7, and the whole submission checklist | `npx skills add https://celobuilders.xyz` |
-| No ERC-8004 Agent ID | Identity, reputation registry work | Issued at registration |
-| No attribution tag (`celo_...`) | **Every mainnet transaction.** Rule 8 has no backfill | Must be wired in before the first tx, not after |
-| No `buy` wallet + funding | Payment Worker, any real evidence purchase | |
-| No AskBots API key | AskBots Adapter, any real review submission | |
-| No Vercel account | Public URL for the frontend | Operator chose Vercel |
-| `gh` CLI not installed | Convenience only — plain `git` push works | |
+**Corrected 2026-09-14 (session 5)** against the live `celobuilders.xyz`
+hackathon object and `askbots.ai/skill.md`. Three things previously written here
+were wrong and are corrected below — see "What the recon changed".
+
+The chain has a strict order, because each item needs the one above it:
+
+| # | Needed | Blocks | Where it comes from |
+|---|---|---|---|
+| 1 | **Celo mainnet wallet** (address) | Everything — `agentWalletAddress` is `requiredAt: registration` | Create it. MetaMask or `cast wallet new` |
+| 2 | **Real CELO on mainnet for gas** | The ERC-8004 mint, and every mainnet tx | Buy CELO, withdraw on the Celo network. Testnet counts for **nothing** in every track |
+| 3 | **ERC-8004 Agent ID URL** | Registration — `erc8004Url` is `requiredAt: registration` | Mint an ERC-8004 agent identity on Celo mainnet first. **Not issued by registering** |
+| 4 | **Personal Telegram @handle** | Registration — `telegram` is `requiredAt: registration` | Yours |
+| 5 | **Celo Builders registration + `attributionTag`** | Rule 8, and the whole submission | `PUT /submissions/me` with the registration-stage fields. Tag is `celo_` + 12 hex, derived from the repo slug, **locked at first save** |
+| 6 | **AskBots API key** | AskBots Adapter, any real review submission | `POST askbots.ai/api/auth/openclaw`. Self-serve, returned **once**, unrecoverable — re-registering mints a *new identity* and discards rating and earnings |
+| 7 | **An AskBots PROJECT url for Observed** | The AskBots CLI Growth Track submission field `askbotsProjectUrl` | Observed must also exist on AskBots **as a project** (`askbots.ai/p/<id>`), not just as a reviewer |
+| 8 | **`buy` closed-beta opt-in** | Payment Worker, every real evidence purchase | `cpayBetaOptIn` at registration. `buy` is closed beta — this has lead time |
+| 9 | **Vercel account** | Public URL for the frontend | Operator chose Vercel |
+| — | ~~Chainstack Growth plan~~ | Nothing | **Optional.** `forno.celo.org` is free and explicitly fine. The coupon path normally means entering payment details first — do not do this |
+| — | `gh` CLI not installed | Convenience only — plain `git` push works | |
+
+### What the recon changed
+
+- **The ERC-8004 Agent ID is an input, not an output.** The build spec's day-1–2
+  plan reads as though registration *issues* the agent ID and wallets. The live
+  field list makes `erc8004Url` and `agentWalletAddress` `requiredAt:
+  registration`, and the attribution block says registration needs "your
+  ERC-8004 Agent ID URL and your agentWalletAddress". So the identity must be
+  minted on Celo mainnet **before** registering. This reorders everything and
+  adds a real-money step ahead of registration day.
+- **The daily-limit contradiction is resolved.** Build spec Section 8 says the
+  official page claims limits scaling 2→5→15→50 while the docs claim none, and
+  asks for a day-one `curl`. The live `askbots.ai/skill.md` answers it directly:
+  *"There is no daily cap, no per-agent quota and no `429`."* What exists instead
+  is one response per agent per project (`409` on a second submission) and
+  first-come-first-served paid slots. The spec's "run a live curl on day 1" is
+  still cheap insurance, but it is no longer an open question.
+- **The AskBots track scores a project, not a reviewer.** `askbotsProjectUrl` is
+  required when `primaryTrack` is `askbots-growth`, must be an
+  `askbots.ai/p/<id>` link ("a bare homepage link, or an `/agent/` link — that is
+  a reviewer agent, not a project — cannot be scored"), and "your funding wallet
+  must match your registered agent wallet". Observed is a reviewer agent, so it
+  needs to be listed on AskBots as a **project** as well.
+- **`buy` is closed beta**, and the opt-in is a registration field. That is a
+  lead-time blocker sitting behind registration.
+- **`reviewerAgentWallets` asks you to declare reviewer agents at registration.**
+  Undeclared reviewer agents are excluded from awards — so Observed must be
+  declared there.
+- **Mainnet only.** `celoNetwork` offers only `celo-mainnet`, and "testnet
+  activity counts for nothing in every track". The spec's "set up Celo Sepolia
+  testnet dev environment" is fine for local work but earns nothing.
 
 **Nothing above blocks the frontend.** It runs in a clearly labelled sample mode
 until a worker exists, and `/status` degrades to `BLOCKED` with an explicit

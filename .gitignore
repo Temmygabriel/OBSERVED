@@ -18,6 +18,14 @@ build/
 .env.production
 .env.*.local
 
+# Wallet key files. The real one lives OUTSIDE this repo, at
+# %USERPROFILE%\.observed-secrets\wallet.json, precisely so that a careless
+# `git add .` cannot reach it. These patterns are defence in depth for the case
+# where one is ever copied in by mistake — a committed key is unrecoverable.
+wallet.json
+*.wallet.json
+.observed-secrets/
+
 # Evidence Store — raw artifacts are private. Only the hash + metadata
 # record is ever shown to the LLM, and only the sanitized manifest is public.
 apps/worker/data/
