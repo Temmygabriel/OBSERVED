@@ -34,6 +34,7 @@
  */
 
 import process from 'node:process';
+import { callDataHex, encodeCall, encodeStringArg, selftest as abiSelftest } from './abi.mjs';
 import { selector, selftest } from './keccak256.mjs';
 
 const CELO_MAINNET_RPC = 'https://forno.celo.org';
@@ -64,22 +65,6 @@ function formatCelo(wei) {
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
-/**
- * ABI-encode a single dynamic `string` argument, as the sole head/tail pair.
- * Layout: offset(32) || length(32) || utf8 bytes right-padded to 32.
- */
-function encodeStringArg(value) {
-  const bytes = Buffer.from(value, 'utf8');
-  const paddedLength = Math.ceil(bytes.length / 32) * 32;
-  const head = Buffer.alloc(32);
-  head.writeBigUInt64BE(32n, 24); // offset to the tail == 32
-  const length = Buffer.alloc(32);
-  length.writeBigUInt64BE(BigInt(bytes.length), 24);
-  const body = Buffer.alloc(paddedLength);
-  bytes.copy(body);
-  return Buffer.concat([head, length, body]).toString('hex');
-}
-
 // ---------------------------------------------------------------------------
 
 async function balance(address) {
@@ -92,9 +77,9 @@ async function balance(address) {
 }
 
 async function estimateRegister(from, agentURI) {
-  const data = selector('register(string)') + encodeStringArg(agentURI);
+  const calldata = encodeCall('register(string)', encodeStringArg(agentURI));
   const gasHex = await rpc('eth_estimateGas', [
-    { from, to: IDENTITY_REGISTRY, data },
+    { from, to: IDENTITY_REGISTRY, data: callDataHex(calldata) },
   ]);
   const gas = BigInt(gasHex);
   const gasPrice = BigInt(await rpc('eth_gasPrice', []));
@@ -103,7 +88,7 @@ async function estimateRegister(from, agentURI) {
   console.log(`registry     ${IDENTITY_REGISTRY}`);
   console.log(`from         ${from}`);
   console.log(`uri          ${agentURI}  (${Buffer.byteLength(agentURI)} bytes)`);
-  console.log(`calldata     ${data.length / 2} bytes`);
+  console.log(`calldata     ${calldata.length} bytes`);
   console.log(`gas estimate ${gas}`);
   console.log(`gas price    ${gasPrice} wei`);
   console.log(`cost         ${formatCelo(cost)} CELO   (${cost} wei)`);
@@ -157,6 +142,8 @@ try {
     selftest();
     console.log('');
     selectorSelftest();
+    console.log('');
+    abiSelftest();
   } else if (command === 'selector') {
     if (!rest[0]) throw new Error('selector requires a signature');
     console.log(selector(rest[0]));
