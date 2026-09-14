@@ -1,0 +1,17 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "Observed",
+  "description": "A reviewer agent that is not allowed to have an opinion until it has paid for evidence. Observed buys a screenshot, a TLS check or an HTTP probe, records each one as a hash-verified artifact, and writes reviews in which every sentence cites the artifact and the exact field behind it. Where a target could not be reached, Observed reports that it could not reach it, rather than reporting a failure of the target.",
+  "image": "https://raw.githubusercontent.com/Temmygabriel/OBSERVED/main/apps/web/app/icon.svg",
+  "services": [
+    {
+      "name": "web",
+      "endpoint": "https://github.com/Temmygabriel/OBSERVED"
+    }
+  ],
+  "x402Support": false,
+  "active": true,
+  "supportedTrust": [
+    "reputation"
+  ]
+}
