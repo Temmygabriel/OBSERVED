@@ -69,11 +69,27 @@ import {
   selftest as abiSelftest,
 } from './abi.mjs';
 import { keccak256, toChecksumAddress } from './keccak256.mjs';
+import { appendSuffix, fromDataSuffix, selftest as erc8021Selftest } from './erc8021.mjs';
 
 const CELO_MAINNET_RPC = 'https://forno.celo.org';
 const CHAIN_ID = 42220n;
 const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
 const WEI_PER_CELO = 10n ** 18n;
+
+/**
+ * Report a failure and unwind, rather than calling `process.exit()`.
+ *
+ * On Windows, `process.exit()` while an RPC socket is still closing trips
+ * `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` in libuv, and the
+ * assertion replaces the exit code with 127. The printed output stays correct,
+ * so the only symptom is the status — which is precisely how a correct "no tag
+ * found" gets misread as a crash by anything checking the exit code. Setting
+ * `exitCode` and returning lets Node shut the event loop down cleanly.
+ */
+function fail(...lines) {
+  for (const line of lines) console.log(line);
+  process.exitCode = 1;
+}
 
 // ---------------------------------------------------------------------------
 // secp256k1 arithmetic, needed only for public-key recovery
@@ -545,7 +561,13 @@ function selftest() {
 async function rpc(method, params) {
   const response = await fetch(CELO_MAINNET_RPC, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    // `Connection: close` keeps undici from holding a pooled socket open at exit.
+    // On Windows, calling process.exit() while that socket is mid-close trips
+    // `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` in libuv, which
+    // replaces the real exit code with 127. The output stays correct, so the
+    // only symptom is a wrong status — which is exactly how a correct "no tag
+    // found" gets misread as a crash.
+    headers: { 'Content-Type': 'application/json', Connection: 'close' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
   const payload = await response.json();
@@ -559,24 +581,61 @@ const formatCelo = (wei) => {
   return fraction ? `${whole}.${fraction}` : whole.toString();
 };
 
+/**
+ * Encode a number as a JSON-RPC quantity: minimal hex, no leading zeros, and
+ * "0x0" for zero. Not the same as the 32-byte padded form used in ABI encoding,
+ * and mixing the two up is a silent error, so this is a named function.
+ */
+const toQuantity = (value) => '0x' + (value === 0n ? '0' : value.toString(16));
+
 // ---------------------------------------------------------------------------
-// Mint
+// Building, signing and sending
 // ---------------------------------------------------------------------------
 
 const AGENT_URI =
   'https://raw.githubusercontent.com/Temmygabriel/OBSERVED/main/agent-registration.json';
 
-async function mint(walletPath, send) {
-  // Run the proof before doing anything with a key.
-  selftest();
-  console.log('');
+/**
+ * RULE 8 IS ENFORCED HERE, NOT REMEMBERED.
+ *
+ * Every mainnet transaction this project sends must carry the assigned
+ * attribution tag, and there is no way to add one afterwards. The mint at
+ * `0x742fe000…` was sent without one because the tag did not exist yet; that
+ * cost is recorded in PROGRESS.md. The way to not repeat it is to make the tool
+ * incapable of sending an untagged transaction, rather than to remember to pass
+ * a flag.
+ *
+ * So `--send` without a tag is refused outright, exactly as `payment-gate.ts`
+ * refuses to spend without one. The tag comes from `--tag` or from the
+ * `ATTRIBUTION_TAG` environment variable, matching `.env.example`.
+ */
+function resolveTag(explicit) {
+  const tag = explicit ?? process.env.ATTRIBUTION_TAG ?? '';
+  return tag.trim() === '' ? null : tag.trim();
+}
 
+/** Refuse rather than send untagged. A dry run only warns. */
+function requireTagForSend(tag, send) {
+  if (tag !== null) return;
+  if (send) {
+    throw new Error(
+      'refusing to broadcast without an attribution tag (Rule 8).\n' +
+        '       Pass --tag <celo_...> or set ATTRIBUTION_TAG.\n' +
+        '       A transaction cannot be tagged after it is sent, and there is no backfill.',
+    );
+  }
+}
+
+async function buildSignSend({ walletPath, to, value, data, tag, send, describe }) {
   const wallet = JSON.parse(fs.readFileSync(walletPath, 'utf8'));
   const privateKey = Buffer.from(wallet.privateKey, 'hex');
   if (privateKey.length !== 32) throw new Error('wallet file does not hold a 32-byte key');
-
   const address = wallet.address;
-  const calldata = encodeCall('register(string)', encodeStringArg(AGENT_URI));
+
+  // The suffix is appended BEFORE the gas estimate, because it is part of the
+  // calldata that will actually be sent. Estimating the untagged version and
+  // then appending would under-estimate the gas.
+  const payload = tag === null ? data : appendSuffix(data, [tag]);
 
   const nonce = BigInt(await rpc('eth_getTransactionCount', [address, 'pending']));
   const block = await rpc('eth_getBlockByNumber', ['latest', false]);
@@ -584,7 +643,7 @@ async function mint(walletPath, send) {
   const priority = BigInt(await rpc('eth_maxPriorityFeePerGas', []));
   const estimated = BigInt(
     await rpc('eth_estimateGas', [
-      { from: address, to: IDENTITY_REGISTRY, data: callDataHex(calldata) },
+      { from: address, to, value: toQuantity(value), data: callDataHex(payload) },
     ]),
   );
   const gasLimit = (estimated * 12n) / 10n; // unused gas is refunded, so a buffer is free
@@ -595,50 +654,167 @@ async function mint(walletPath, send) {
     maxPriorityFeePerGas: priority,
     maxFeePerGas: baseFee * 2n + priority,
     gasLimit,
-    to: IDENTITY_REGISTRY,
-    value: 0n,
-    data: calldata,
+    to,
+    value,
+    data: payload,
   };
 
   const unsigned = serializeEip1559(tx, null);
-  const signature = signDigest(keccak256(unsigned), privateKey);
+  const digest = keccak256(unsigned);
+  const signature = signDigest(digest, privateKey);
   const signed = serializeEip1559(tx, signature);
   const txHash = '0x' + keccak256(signed).toString('hex');
 
   // Independent check: recovering from our own signature must give our address.
   // If it does not, the transaction would be rejected — stop before sending.
   const recovered = pointToAddress(
-    recoverPublicKey(keccak256(unsigned), signature.r, signature.s, signature.recoveryId),
+    recoverPublicKey(digest, signature.r, signature.s, signature.recoveryId),
   );
 
   console.log(`wallet        ${address}`);
-  console.log(`registry      ${IDENTITY_REGISTRY}`);
-  console.log(`agentURI      ${AGENT_URI}`);
+  console.log(`to            ${to}`);
+  if (describe) console.log(`action        ${describe}`);
+  console.log(`value         ${formatCelo(value)} CELO`);
   console.log(`nonce         ${nonce}`);
+  console.log(`calldata      ${payload.length} bytes` + (tag ? `  (incl. tag ${tag})` : '  (NO TAG)'));
   console.log(`gas limit     ${gasLimit}  (estimate ${estimated} + buffer)`);
   console.log(`max fee/gas   ${Number(tx.maxFeePerGas) / 1e9} gwei`);
   console.log(`worst-case    ${formatCelo(gasLimit * tx.maxFeePerGas)} CELO`);
   console.log(`tx hash       ${txHash}`);
-  console.log(`signed bytes  ${signed.length}`);
   console.log('');
 
   if (recovered !== address) {
-    console.log(`FAIL  signature recovers to ${recovered}, not ${address}`);
-    console.log('Refusing to send: the network would reject this anyway.');
-    process.exit(1);
+    fail(
+      `FAIL  signature recovers to ${recovered}, not ${address}`,
+      'Refusing to send: the network would reject this anyway.',
+    );
+    return null;
   }
-  console.log(`PASS  signature recovers to the signing wallet`);
+  console.log('PASS  signature recovers to the signing wallet');
+
+  // Decode the payload we are about to send, rather than trusting that the
+  // append did what it was supposed to.
+  const decoded = fromDataSuffix(payload);
+  if (tag !== null) {
+    if (decoded === null || !decoded.codes.includes(tag)) {
+      fail(
+        '',
+        `FAIL  the tag ${tag} is NOT readable in the calldata being signed`,
+        'Refusing to send: this is the wiring mistake the tag exists to avoid.',
+      );
+      return null;
+    }
+    console.log(`PASS  tag ${tag} decodes from the calldata being signed`);
+  }
 
   if (!send) {
     console.log('');
-    console.log('DRY RUN — nothing was broadcast. Re-run with --send to mint.');
-    return;
+    console.log(
+      tag === null
+        ? 'DRY RUN — nothing broadcast. NOTE: --send would be REFUSED without a tag.'
+        : 'DRY RUN — nothing was broadcast. Re-run with --send to send it.',
+    );
+    return null;
   }
 
   const result = await rpc('eth_sendRawTransaction', ['0x' + signed.toString('hex')]);
   console.log('');
   console.log(`broadcast     ${result}`);
   console.log(`explorer      https://celoscan.io/tx/${result}`);
+  return result;
+}
+
+/**
+ * Mint a NEW ERC-8004 identity.
+ *
+ * This has already been done once: `agentId` 9849. Running it again mints a
+ * SECOND identity for the same wallet — it does not update the first, and the
+ * `agentId` in the submission would no longer be the one this wallet owns most
+ * recently. It is kept because registering a second agent is a legitimate thing
+ * to want, but it is not an idempotent command.
+ */
+async function mint(walletPath, send, tag) {
+  selftest();
+  console.log('');
+  await buildSignSend({
+    walletPath,
+    to: IDENTITY_REGISTRY,
+    value: 0n,
+    data: encodeCall('register(string)', encodeStringArg(AGENT_URI)),
+    tag,
+    send,
+    describe: 'mint a NEW ERC-8004 identity (agentId 9849 already exists)',
+  });
+}
+
+/**
+ * The cheapest possible tagged transaction: a zero-value transfer to ourselves
+ * with nothing but the suffix as calldata.
+ *
+ * This is the "one tiny test transaction" the hackathon doc asks for — checking
+ * the tag on the first tagged transaction instead of at the end, because "a
+ * wiring mistake costs one transaction" if it is caught now and the whole event
+ * if it is caught later.
+ */
+async function tagCheck(walletPath, send, tag) {
+  if (tag === null) throw new Error('tag-check needs --tag <celo_...> or ATTRIBUTION_TAG');
+
+  selftest();
+  console.log('');
+  const wallet = JSON.parse(fs.readFileSync(walletPath, 'utf8'));
+  await buildSignSend({
+    walletPath,
+    to: wallet.address,
+    value: 0n,
+    data: Buffer.alloc(0),
+    tag,
+    send,
+    describe: 'zero-value self-transfer carrying only the attribution suffix',
+  });
+}
+
+/**
+ * Decode the attribution suffix from a transaction ALREADY on chain. This is the
+ * local equivalent of the SDK's `verifyTx`: it reads the transaction the network
+ * actually accepted, not the one we believe we sent.
+ */
+async function verifyTransaction(txHash) {
+  const found = await rpc('eth_getTransactionByHash', [txHash]);
+  if (!found) throw new Error('no such transaction; it may still be pending');
+
+  const decoded = fromDataSuffix(found.input);
+  console.log(`tx            ${txHash}`);
+  console.log(`block         ${found.blockNumber ? BigInt(found.blockNumber) : 'pending'}`);
+  console.log(`from          ${toChecksumAddress(found.from.slice(2))}`);
+  console.log(`to            ${found.to ? toChecksumAddress(found.to.slice(2)) : '(contract creation)'}`);
+  console.log(`calldata      ${(found.input.length - 2) / 2} bytes`);
+  console.log('');
+
+  if (decoded === null) {
+    fail(
+      'NO ATTRIBUTION TAG in this transaction.',
+      'The transaction is valid; it just will not be credited.',
+    );
+    return;
+  }
+
+  const assigned = resolveTag(null);
+  console.log(`schemaId      ${decoded.schemaId}`);
+  console.log(`codes         ${decoded.codes.join(', ')}`);
+  console.log(`payload       ${decoded.txData.length / 2 - 1} bytes of real calldata`);
+  if (assigned !== null) {
+    const carries = decoded.codes.includes(assigned);
+    console.log('');
+    console.log(`assigned tag  ${assigned}`);
+    console.log(`carries it    ${carries ? 'YES' : 'NO'}`);
+    if (!carries) {
+      console.log('');
+      console.log('This transaction does NOT carry the assigned tag and will not be credited.');
+      process.exit(1);
+    }
+  }
+  console.log('');
+  console.log('Tag is present and decodes correctly.');
 }
 
 // ---------------------------------------------------------------------------
@@ -690,17 +866,21 @@ async function receipt(txHash) {
   console.log(`actual cost   ${formatCelo(actualCost)} CELO`);
 
   if (!succeeded) {
-    console.log('');
-    console.log('The transaction reverted: the fee was spent and nothing was minted.');
-    process.exit(1);
+    fail(
+      '',
+      'The transaction reverted: the fee was spent and nothing was minted.',
+    );
+    return;
   }
 
   const minted = findMintedTokenId(found);
   if (!minted) {
-    console.log('');
-    console.log('No Transfer log from the identity registry in this receipt.');
-    console.log('Nothing was minted, or the registry address has changed.');
-    process.exit(1);
+    fail(
+      '',
+      'No Transfer log from the identity registry in this receipt.',
+      'Nothing was minted, or the registry address has changed.',
+    );
+    return;
   }
 
   const chainIdHex = await rpc('eth_chainId', []);
@@ -742,27 +922,46 @@ async function receipt(txHash) {
 
 const [command, ...rest] = process.argv.slice(2);
 
+/** Read `--flag value` from the argument list. */
+const flag = (name) => (rest.includes(name) ? rest[rest.indexOf(name) + 1] : undefined);
+
+const walletPath = flag('--wallet') ?? 'C:/Users/USER/.observed-secrets/wallet.json';
+const tag = resolveTag(flag('--tag'));
+const send = rest.includes('--send');
+
 try {
   if (command === 'selftest') {
     selftest();
+    console.log('');
+    console.log('ERC-8021 attribution');
+    console.log('--------------------');
+    erc8021Selftest();
   } else if (command === 'mint') {
-    const walletPath = rest.includes('--wallet')
-      ? rest[rest.indexOf('--wallet') + 1]
-      : null;
-    if (!walletPath) throw new Error('mint requires --wallet <wallet.json>');
-    await mint(walletPath, rest.includes('--send'));
+    requireTagForSend(tag, send);
+    await mint(walletPath, send, tag);
+  } else if (command === 'tag-check') {
+    await tagCheck(walletPath, send, tag);
+  } else if (command === 'verify') {
+    if (!rest[0]) throw new Error('verify requires a transaction hash');
+    await verifyTransaction(rest[0]);
   } else if (command === 'receipt') {
     if (!rest[0]) throw new Error('receipt requires a transaction hash');
     await receipt(rest[0]);
   } else {
     console.log('usage:');
     console.log('  node tools/sign-tx.mjs selftest');
-    console.log('  node tools/sign-tx.mjs mint --wallet <wallet.json> [--send]');
+    console.log('  node tools/sign-tx.mjs tag-check  [--send] [--tag <celo_...>]');
+    console.log('  node tools/sign-tx.mjs mint       [--send] [--tag <celo_...>]');
+    console.log('  node tools/sign-tx.mjs verify <txHash>');
     console.log('  node tools/sign-tx.mjs receipt <txHash>');
-    process.exit(1);
+    console.log('');
+    console.log('  --wallet defaults to ~/.observed-secrets/wallet.json');
+    console.log('  --tag    defaults to $ATTRIBUTION_TAG');
+    console.log('  --send is refused without a tag: Rule 8 has no backfill.');
+    process.exitCode = 1;
   }
 } catch (error) {
   // error.message never contains key material: nothing here formats the key.
   console.error(`error: ${error.message}`);
-  process.exit(1);
+  process.exitCode = 1;
 }
