@@ -108,3 +108,68 @@ jobs:
         if: ${{ hashFiles('package-lock.json') == '' }}
         run: |
           echo "::notice::No package-lock.json yet. Once one is committed, CI switches to 'npm ci' automatically."
+
+  # The only job that EXECUTES the worker rather than compiling it.
+  #
+  # This exists because of the most uncomfortable line in PROGRESS.md: every
+  # collector was called "complete" and not one had ever been run. The fetcher
+  # had a bug that made it send nothing at all, so the HTML collector could
+  # never have observed anything — and it survived three sessions because the
+  # type checker cannot see a missing `request.end()`.
+  #
+  # It observes the hackathon's own site, which is a real target, publicly
+  # reachable, and stable for the life of the event.
+  #
+  # The exit code is the interesting part. A target that cannot be reached
+  # produces an `unknown_*` artifact and exits 0 — that is the tri-state
+  # working, not a failure. A non-zero exit means OUR code threw, which is
+  # precisely the class of bug this job is here to catch.
+  observe:
+    name: Observe a real target
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Run one real observation
+        run: |
+          set -o pipefail
+          mkdir -p observed
+          npm run observe --workspace @observed/worker -- \
+            https://celobuilders.xyz \
+            --repo https://github.com/Temmygabriel/OBSERVED \
+            --out observed/run.json 2>&1 | tee observe.log
+
+      - name: Publish the observation
+        if: always()
+        run: |
+          {
+            echo '## Real observation'
+            echo ''
+            echo 'Produced by executing the collectors, not by compiling them.'
+            echo ''
+            echo '```'
+            tail -c 100000 observe.log 2>/dev/null || echo '(no output was produced)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: observation
+          path: |
+            observed/run.json
+            observe.log
+          if-no-files-found: warn
