@@ -44,11 +44,17 @@ export const COLLECTORS: Record<CollectorKind, Collector> = {
  * spent by the Payment Worker on an explicit decision — never as a side effect
  * of "run the default set".
  */
-export const DEFAULT_COLLECTORS: readonly CollectorKind[] = ['dns', 'html', 'tls'];
+export const DEFAULT_COLLECTORS: readonly CollectorKind[] = ['dns', 'html', 'tls', 'repo'];
 
 export interface CollectInput {
   review_session_id: string;
   target_url: string;
+  /**
+   * The project's declared source repository, if it published one. Read only by
+   * the `repo` collector, which is why it is a sibling of `target_url` rather
+   * than folded into it.
+   */
+  repo_url?: string;
   resolve: Resolver;
   storeRaw: CollectorContext['storeRaw'];
   /** Paid results, keyed by collector kind. The orchestrator never buys. */
@@ -119,6 +125,17 @@ export async function collectEvidence(input: CollectInput): Promise<CollectResul
       continue;
     }
 
+    if (kind === 'repo' && !input.repo_url) {
+      // Not a finding, so no artifact — but not silent either. Recording the gap
+      // here keeps it in the run log, where it explains an empty checklist row,
+      // without publishing it as a fact about someone's project.
+      skipped.push({
+        collector: 'repo',
+        reason: 'no source repository was declared for this project',
+      });
+      continue;
+    }
+
     if (collector.requires_paid_fetch && !input.paid_fetches?.[kind]) {
       // Not a failure to report as an observation — a decision that has not
       // been made yet. The orchestrator's caller buys, then re-runs.
@@ -164,6 +181,7 @@ async function runCollector(
     now,
     storeRaw: input.storeRaw,
     timeout_ms: timeoutMs,
+    ...(input.repo_url ? { repo_url: input.repo_url } : {}),
     ...(paidFetch ? { paid_fetch: paidFetch } : {}),
   };
 
@@ -185,6 +203,7 @@ export const IMPLEMENTED_COLLECTORS: readonly CollectorKind[] = [
   'dns',
   'html',
   'tls',
+  'repo',
 ];
 
 export type { Collector, CollectorContext, PaidFetchResult };

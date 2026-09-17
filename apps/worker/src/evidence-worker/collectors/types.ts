@@ -34,6 +34,18 @@ export interface PaidFetchResult {
 export interface CollectorContext {
   review_session_id: string;
   target_url: string;
+  /**
+   * The project's declared source repository, when it published one.
+   *
+   * Deliberately separate from `target_url`, because they are different
+   * subjects: the website is what `html`/`tls`/`dns` observe, and the repository
+   * is what `repo` observes. The artifact a collector returns names the subject
+   * it is actually about, so a citation cannot confuse the two.
+   *
+   * Absent means the project declared no repository. That is not a finding, so
+   * `repo` returns no artifact at all rather than an `invalid` one.
+   */
+  repo_url?: string;
   /** Injected so the SSRF guard's resolution can be stubbed in a test. */
   resolve: Resolver;
   now: () => Date;
