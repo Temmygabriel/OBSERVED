@@ -4,22 +4,28 @@
  * The shape of this module is the product's central claim made structural.
  *
  * Rule 2: TLS/DNS/HTTP checks are deterministic code, never LLM judgment. The
- * model's only job is turning a structured evidence record into a sentence.
+ * model's only job would be turning a structured evidence record into a
+ * sentence.
  *
  * Rule 10: every claim carries claim → evidence → action, and the final review
  * text is RENDERED FROM that record rather than free-written. So there are two
  * distinct steps here, and keeping them distinct is what makes the claim
  * checkable:
  *
- *   draftClaims()  — the model proposes. Its output is data, not prose.
+ *   draftClaims()  — claims are proposed from the record. Its output is data,
+ *                    not prose.
  *   renderDraft()  — the prose is assembled from the validated data only.
  *
- * The critical property: a model output that cites an artifact id we do not
- * hold, or that asserts a conclusion against an `unknown_*` observation, is
- * DISCARDED rather than softened. `validateClaims` is the gate, and it is
- * deliberately strict — the demo's credibility rests on the system visibly
- * refusing to ship a claim it cannot support, so a validator that "fixes"
- * bad output would remove the very behaviour being demonstrated.
+ * Both of those are now deterministic. See `draft-from-evidence.ts` for why
+ * that is a stronger position than calling a model, and for where a model would
+ * go if one is ever added.
+ *
+ * The critical property: a proposal that cites an artifact id we do not hold, or
+ * that asserts a conclusion against an `unknown_*` observation, is DISCARDED
+ * rather than softened. `validateClaims` is the gate, and it is deliberately
+ * strict — the demo's credibility rests on the system visibly refusing to ship a
+ * claim it cannot support, so a validator that "fixes" bad output would remove
+ * the very behaviour being demonstrated.
  */
 
 import type {
@@ -28,6 +34,7 @@ import type {
   ReviewSubmission,
 } from '@observed/shared-types';
 import { canSupportClaim } from '@observed/shared-types';
+import { draftClaimsFromEvidence } from './draft-from-evidence';
 
 /** Raised when no claim survives validation. This is a normal outcome. */
 export class ClaimsHeldError extends Error {
@@ -131,33 +138,35 @@ export function renderDraft(claims: readonly ReviewClaim[]): string {
 // ---------------------------------------------------------------------------
 
 /**
- * NOT IMPLEMENTED YET.
+ * Propose claims from the collected evidence.
  *
- * What this must do, and the one thing it must never do:
+ * DETERMINISTIC, AND NOT A MODEL CALL — the argument is in full at the top of
+ * `draft-from-evidence.ts`. The short version, because this is the seam where
+ * somebody will later want to add a model and should know what they are giving
+ * up: `validateClaims` below is the gate, so a model and this function are held
+ * to exactly the same standard. What differs is the failure mode. This one
+ * cannot invent a plausible claim that passes, because it can only restate
+ * fields the collectors actually recorded.
  *
- *   - the prompt receives ONLY `EvidenceArtifact` records. Never raw HTML, never
- *     a screenshot's pixels, never the target's own marketing copy. `raw_ref`
- *     is a private pointer and must not be resolved into the prompt.
- *   - the model is asked for structured claims (`ReviewClaim[]`), not prose.
- *   - the output is parsed, then handed to `validateClaims` above. Whatever
- *     survives is what ships.
+ * A model is not excluded from the design, it is excluded from the critical
+ * path: if one is added it goes here, `validateClaims` stays the gate, and this
+ * stays the fallback. The guarantee then does not depend on which one ran.
  *
- * The model cannot choose network targets and cannot call `buy`: it has no such
- * capability in this process, so those are absences rather than prohibitions it
- * is trusted to respect.
+ * Every claim returned cites an artifact from `artifacts` by construction, so a
+ * claim held by `validateClaims` after this call is a bug in this module rather
+ * than a judgement call in that one — which makes the two a check on each other
+ * instead of one trusting the other.
  */
 export async function draftClaims(
   artifacts: readonly EvidenceArtifact[],
 ): Promise<ReviewClaim[]> {
   if (artifacts.length === 0) {
-    // Refusing here rather than calling a model with an empty prompt: there is
-    // nothing to observe, so there is nothing to say.
+    // Refusing here rather than drafting from an empty record: there is nothing
+    // to observe, so there is nothing to say.
     throw new ClaimsHeldError(['no evidence artifacts were collected']);
   }
 
-  throw new Error(
-    'review-generator.draftClaims is not implemented yet — needs the model call plus the claim-evidence-action schema prompt',
-  );
+  return draftClaimsFromEvidence(artifacts);
 }
 
 /**
