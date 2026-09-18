@@ -518,6 +518,47 @@ the next produced `200` at a Google address, so a third-party link may flap
 between verdicts. The annotations now print `target_url` and `href`, so the next
 occurrence will name the link.
 
+### 23. Never put a shell script inside `node -e '...'` in CI
+
+The annotation step in decision 21's commit broke the build on its first
+outing, and the cause was an apostrophe. A comment explaining the new field read
+*"the collector records the page's `href`"* — and that one possessive terminated
+bash's single-quoted string. Everything after it became unquoted shell, node
+received a mangled script, and the step died with a SyntaxError **on stderr**.
+
+That is exactly the failure this step was written to eliminate. GitHub annotates
+stdout workflow commands; a SyntaxError on stderr is invisible without admin
+rights. So the run reported nothing but a red X, and the observation it was
+supposed to describe had actually **succeeded** — the log said only "exit code
+1", which reads as "the observation failed".
+
+Use a **quoted heredoc** instead:
+
+```yaml
+run: |
+  node --input-type=commonjs - <<'NODE'
+  ...script...
+  NODE
+```
+
+With `<<'NODE'` (delimiter quoted) apostrophes, backticks and `$` are all
+literal, so a comment can contain anything. Two rules that follow:
+
+- **Escape newlines in anything that becomes a workflow command.** A command's
+  parameters run to the end of the line, so an embedded newline silently swallows
+  the rest of the annotation with no sign anything was lost. `say()` in the
+  annotation step flattens `\r?\n` for this reason.
+- **A reporter must be able to report its own failure.** The step wraps its whole
+  body in a `catch` that emits `::error::` naming the exception. Without that, a
+  broken reporter fails silently, which is worse than having none — it looks like
+  the data was fine and there was nothing to say.
+
+**The general point:** this project keeps discovering that the hard part is not
+producing a result, it is producing a result someone else can *check*. The same
+mistake has now appeared three times in three different costumes — a job whose
+logs nobody could read, an address with two meanings, and a reporter that failed
+silently. Each time the fix was to make the output carry its own interpretation.
+
 ---
 
 ## Rules that are easy to violate by accident

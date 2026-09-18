@@ -171,53 +171,87 @@ jobs:
             --out "$GITHUB_WORKSPACE/observed/run.json" 2>&1 | tee observe.log
 
       # Annotations are the ONLY channel readable without admin rights on the
-      # repo — the step summary and the uploaded bundle both require a token.
-      # So the evidence this job just produced is re-emitted as workflow
-      # commands, which come back as annotations on the commit. Without this,
-      # "the collectors ran" is a sentence in a document; with it, every
-      # artifact's status, content hash and resolved address are on the commit
-      # where anyone can read them.
+      # repo — the step summary and the uploaded bundle both require a token, and
+      # the job log requires admin. So the evidence this job just produced is
+      # re-emitted as workflow commands, which come back as annotations on the
+      # commit. Without this, "the collectors ran" is a sentence in a document;
+      # with it, every artifact's status, URL, status code and final URL are on
+      # the commit where anyone can read them.
+      #
+      # The script arrives on stdin through a QUOTED heredoc, not as
+      # `node -e '...'`. That is not style. Shell single-quoting means one
+      # apostrophe anywhere in the script — including inside a comment —
+      # terminates the string early, and the step then dies with a SyntaxError on
+      # stderr, which is precisely the unreadable failure this whole step exists
+      # to eliminate. It happened on this step's first outing: a comment reading
+      # "the page's href" broke it, and the run reported nothing but a red X. With
+      # a quoted delimiter, apostrophes, backticks and `$` are all literal.
+      #
+      # The top-level catch is the other half of that lesson: a reporter that
+      # cannot report its own failure is worth nothing, so this one emits an
+      # `::error::` naming the exception rather than exiting quietly.
       - name: Re-emit the artifacts as annotations
         if: always()
         run: |
-          node -e '
-            const fs = require("node:fs");
+          node --input-type=commonjs - <<'NODE'
+          const fs = require("node:fs");
+
+          // One place that writes a workflow command, so a message can never
+          // carry a raw newline into it: a command's parameters run to the end
+          // of the line, so an embedded newline silently swallows the rest and
+          // the annotation is truncated with no sign that anything was lost.
+          const say = (level, message) => {
+            const flat = String(message).replace(/\r?\n/g, " ").replace(/%/g, "%25");
+            console.log("::" + level + "::" + flat);
+          };
+
+          try {
             let run;
             try {
               run = JSON.parse(fs.readFileSync(process.env.GITHUB_WORKSPACE + "/observed/run.json", "utf8"));
             } catch {
-              console.log("::warning::no observation bundle was written — the run failed before it could report");
+              say("warning", "no observation bundle was written — the run failed before it could report");
               process.exit(0);
             }
+
             const artifacts = run.artifacts ?? [];
             const skipped = run.skipped ?? [];
             const show = (value) => {
-              const text = Array.isArray(value) ? value.join("|") : String(value);
-              return text.length > 90 ? text.slice(0, 90) + "…" : text;
+              const flat = (Array.isArray(value) ? value.join("|") : String(value)).replace(/\r?\n/g, " ");
+              return flat.length > 90 ? flat.slice(0, 90) + "..." : flat;
             };
-            console.log(`::notice::observation produced ${artifacts.length} artifact(s); ${skipped.length} collector(s) skipped`);
+
+            say("notice", "observation produced " + artifacts.length + " artifact(s); " + skipped.length + " collector(s) skipped");
+
             for (const a of artifacts.slice(0, 20)) {
               const m = a.metadata ?? {};
+              // unknown_* is a legitimate statement about the target, not a
+              // defect — the same distinction the exit code makes. It warns; it
+              // does not fail.
               const level = String(a.status).startsWith("unknown_") ? "warning" : "notice";
-              // `target_url` is the URL actually probed, and it is what makes a
+              // target_url is the URL actually probed, and it is what makes a
               // link result attributable. Without it the four link artifacts are
-              // four statuses attached to nothing: the collector records the
-              // page's `href` in metadata and the resolved URL here, and a link
-              // result that cannot be traced to a link is not citable.
-              const bits = [`${a.collector}/${a.artifact_id}`, a.status, `url=${show(a.target_url)}`];
+              // four statuses attached to nothing, and a link result that cannot
+              // be traced to a link is not citable.
+              const bits = [a.collector + "/" + a.artifact_id, a.status, "url=" + show(a.target_url)];
               // The address the socket connected to, and the URL it ended on.
               // These two are what distinguish "the page moved" from "the domain
               // has several addresses" — without both, an address that differs
               // from the DNS answer is unreadable, which is exactly the question
               // the first annotated run left open.
-              if (a.resolved_ip != null) bits.push(`ip=${a.resolved_ip}`);
+              if (a.resolved_ip != null) bits.push("ip=" + a.resolved_ip);
               for (const key of ["status_code", "content_type", "final_url", "href", "redirect_count", "addresses", "refusal", "error"]) {
-                if (m[key] !== undefined && m[key] !== null) bits.push(`${key}=${show(m[key])}`);
+                if (m[key] !== undefined && m[key] !== null) bits.push(key + "=" + show(m[key]));
               }
-              console.log(`::${level}::${bits.join(" ")}`);
+              say(level, bits.join(" "));
             }
-            for (const s of skipped) console.log(`::notice::skipped ${s.collector}: ${s.reason}`);
-          '
+
+            for (const s of skipped) say("notice", "skipped " + s.collector + ": " + s.reason);
+          } catch (error) {
+            say("error", "annotation step failed: " + (error && error.stack ? error.stack : error));
+            process.exit(1);
+          }
+          NODE
 
       - name: Publish the observation
         if: always()
