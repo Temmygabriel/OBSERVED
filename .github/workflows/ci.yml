@@ -104,10 +104,23 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Remind about the lockfile
-        if: ${{ hashFiles('package-lock.json') == '' }}
+      # This has to ask git, not the filesystem.
+      #
+      # It originally read `if: ${{ hashFiles('package-lock.json') == '' }}`, and
+      # that step could never fire: it runs *after* the `npm install` above, which
+      # has already written a package-lock.json into the working tree, so the file
+      # always "exists" and the step is skipped on every run. A skipped reminder
+      # reads as "the lockfile is committed", which is the opposite of the truth —
+      # nothing is committed until someone commits it. The condition was asking
+      # about the wrong thing: the question is what is *in the repo*, not what
+      # happens to be on disk after an install.
+      - name: Report on the lockfile
         run: |
-          echo "::notice::No package-lock.json yet. Once one is committed, CI switches to 'npm ci' automatically."
+          if [ -z "$(git ls-files package-lock.json)" ]; then
+            echo "::notice::No package-lock.json is committed, so installs take the 'npm install' branch and are not reproducible. Committing one switches CI to 'npm ci' automatically. Vercel produces one on first deploy, which is the cheapest route."
+          else
+            echo "OK — package-lock.json is committed; CI uses 'npm ci'."
+          fi
 
   # The only job that EXECUTES the worker rather than compiling it.
   #
@@ -145,11 +158,46 @@ jobs:
       - name: Run one real observation
         run: |
           set -o pipefail
-          mkdir -p observed
+          mkdir -p "$GITHUB_WORKSPACE/observed"
+          # An absolute path, deliberately. A bare `--out observed/run.json` is
+          # resolved against the process's cwd, and under `npm run --workspace`
+          # that is `apps/worker` — not the repo root. The first run of this job
+          # died with ENOENT on exactly that mismatch, after doing the whole
+          # observation successfully, and the upload step silently found nothing
+          # for the same reason.
           npm run observe --workspace @observed/worker -- \
             https://celobuilders.xyz \
             --repo https://github.com/Temmygabriel/OBSERVED \
-            --out observed/run.json 2>&1 | tee observe.log
+            --out "$GITHUB_WORKSPACE/observed/run.json" 2>&1 | tee observe.log
+
+      # Annotations are the ONLY channel readable without admin rights on the
+      # repo — the step summary and the uploaded bundle both require a token.
+      # So the evidence this job just produced is re-emitted as workflow
+      # commands, which come back as annotations on the commit. Without this,
+      # "the collectors ran" is a sentence in a document; with it, every
+      # artifact's status, content hash and resolved address are on the commit
+      # where anyone can read them.
+      - name: Re-emit the artifacts as annotations
+        if: always()
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            let run;
+            try {
+              run = JSON.parse(fs.readFileSync(process.env.GITHUB_WORKSPACE + "/observed/run.json", "utf8"));
+            } catch {
+              console.log("::warning::no observation bundle was written — the run failed before it could report");
+              process.exit(0);
+            }
+            const artifacts = run.artifacts ?? [];
+            const skipped = run.skipped ?? [];
+            console.log(`::notice::observation produced ${artifacts.length} artifact(s); ${skipped.length} collector(s) skipped`);
+            for (const a of artifacts.slice(0, 20)) {
+              const level = String(a.status).startsWith("unknown_") ? "warning" : "notice";
+              console.log(`::${level}::${a.collector}: ${a.status} hash=${String(a.content_hash).slice(0, 16)} ip=${a.resolved_ip ?? "-"} at=${a.observed_at}`);
+            }
+            for (const s of skipped) console.log(`::notice::skipped ${s.collector}: ${s.reason}`);
+          '
 
       - name: Publish the observation
         if: always()
