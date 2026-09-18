@@ -5,9 +5,10 @@ things or re-litigate settled decisions. `PROGRESS.md` says *what* is built.
 This file says *why*, and records the environment facts that are easy to
 forget.
 
-**Last updated:** 2026-09-13 (session 4 — the `tls` collector and the link sweep
-landed, CI green, and a fetcher bug that would have made every observation
-silently empty. See decisions 16, 17 and 18).
+**Last updated:** 2026-09-17 (session 6 — registration, the tag proven on-chain,
+the `repo` collector, and the first thing in this project that actually *runs*
+the collectors. See decisions 19 and 20, and note the corrected CI-reading
+section below: there IS a readable channel that was not listed).
 
 ---
 
@@ -53,6 +54,15 @@ pipes each workspace through `tee` and re-emits every `error TS...` line as an
 `::error::` workflow command — plain stdout is not annotated, and a step that
 redirects the compiler straight into a file reports nothing but
 `Process completed with exit code 1.`
+
+**The generalisation, learned the hard way in session 6:** annotations are the
+only readable channel, so **anything we want to see must be emitted as a workflow
+command.** A program that prints a stack trace to stderr and exits is invisible
+from outside the repo — which is how the `observe` job's first failure arrived as
+four words and no cause. `apps/worker/src/cli/observe.ts` now emits
+`::error::observe: <detail>` on every failure path, and any future tool that runs
+in CI should do the same. This is not a nicety: with CI as the compiler, an
+unreadable failure is a failure that cannot be fixed.
 
 Two quirks worth remembering:
 
@@ -388,6 +398,69 @@ otherwise be swept as a link, fail, and be published as a broken link on
 somebody's project — a fabricated finding, which is the one thing this codebase
 must never produce.
 
+### 19. The project now has exactly one thing that runs the collectors, and its exit code is the point
+
+Decision 16 recorded the project's biggest risk: nothing here executes code, so
+"complete" only ever meant "compiles", and a fetcher that sent nothing at all
+survived three sessions. Session 6 built the structural answer.
+
+`apps/worker/src/cli/observe.ts` (`npm run observe`) performs one genuine
+observation end to end — the real `node:dns` resolver, the real pinned fetcher,
+the real evidence store, no mocks, and **no filtering of the output**. It uses
+only the free collectors on purpose: a tool whose entire job is "does this
+actually work" must be runnable by anyone, at any time, with no wallet and no key.
+A CI job runs it on every push against a real, stable, publicly reachable target.
+
+**The exit code carries the design.** A target that cannot be reached produces an
+`unknown_*` artifact and exits **0** — that is the tri-state *working*, and
+treating it as failure would train the team to treat `unknown_*` as bad news,
+which is the first step toward making it a pass/fail. A non-zero exit means OUR
+code threw. Only that is a bug worth failing a build over.
+
+**And the failure it caught on its first run was not the failure it looked like.**
+The job exited 1 because the tool died with `ENOENT` writing `--out
+observed/run.json`: under `npm run --workspace` the cwd is `apps/worker`, while
+the workflow's `mkdir -p observed` happened at the repo root. The observation
+itself was not what failed — the tool died writing its own receipt. The fix
+creates the parent directory inside the tool, because a harness bug must never be
+reportable as a failure of the observation.
+
+**How to apply:** when adding anything that runs in CI, decide deliberately what
+its exit code means and make the *uninteresting* outcomes pass. Then remember the
+caveat this session leaves open — the first run's log was unreadable, so whether
+the observation itself produced artifacts is **still unconfirmed**. Do not
+upgrade "the collectors execute" from intention to fact until an artifact has
+actually been read. That is the same mistake decision 16 is about, one layer up.
+
+### 20. The attribution tag is a fact about the submission, not a property of the credential
+
+Registration is done: tag **`celo_f07034d50007`**, `status: "draft"`,
+`primaryTrack: judges-favorite`.
+
+Things about it that are easy to get wrong later:
+
+- **It is derived from the `owner/repo` slug and locked at the first save.** The
+  first `PUT /submissions/me` that succeeded is what fixed it. That is also why
+  it could not be computed in advance, and why the ERC-8004 mint was necessarily
+  untagged — see the "unattributed first transaction" note in `PROGRESS.md`.
+- **Rotating the API key does not lose it.** The operator rotated the Celo
+  Builders key on 2026-09-17. The tag was captured to
+  `~/.observed-secrets/attribution.json` the moment it was issued, outside the
+  repo. An expired or replaced credential cannot take a locked slug-derived tag
+  with it. Do not re-register to "get the tag back" — re-registering **mints a
+  new identity and discards rating and earnings**, which is how this project
+  would actually lose something.
+- **Secrets live at `~/.observed-secrets/`** — `wallet.json`,
+  `celobuilders.json`, `attribution.json` — never in the repo, so `git add .`
+  cannot reach them. Tools there read the key and **redact it from everything
+  they print**; keep that property if you add another one.
+- **The block on the AskBots track is money, not effort.** `askbotsProjectUrl`
+  needs Observed listed on AskBots as a *funded* project, which needs roughly
+  **$1.10 USDT** the operator does not have (0 USDT as of 2026-09-17). This has
+  already been raised and answered — do not re-suggest "just add funds". Aim the
+  build at `real-world-adoption` ($1,000 + $750), which explicitly rewards a free
+  product with real users and costs nothing to enter.
+
 ---
 
 ## Rules that are easy to violate by accident
@@ -397,7 +470,7 @@ must never produce.
 | 3 — tri-state evidence | `shared-types/src/evidence.ts` (`isConclusive()` is the only gate for a claim); `review-generator/validateClaims()` downgrades any claim asserting against an `unknown_*` artifact |
 | 4 — SSRF guard | `worker/src/evidence-worker/ssrf-guard.ts` for the rules, `pinned-request.ts` for the fetcher that actually obeys them. **Both complete.** Re-check on **every redirect hop** via `assertRedirectHop`; connect to `pinResolvedAddress()`, never re-resolve. No `fetch`, no `redirect: 'follow'` — see decision 15. A POST never follows a redirect — decision 18 |
 | 5 — exclusion before spend | `worker/src/policy-engine/exclusion.ts` + `evaluateProject()`. The branch order in `evaluateProject` IS the policy: exclusion is checked before a budget is ever consulted |
-| 8 — attribution tag | `payment-gate.ts` `attributionTagOrRefuse()`. **No backfill** — refuse rather than spend untagged |
+| 8 — attribution tag | `payment-gate.ts` `attributionTagOrRefuse()`. **No backfill** — refuse rather than spend untagged. Tag is `celo_f07034d50007` (locked, stored outside the repo); `tools/sign-tx.mjs` appends the ERC-8021 suffix and the tag has been decoded back out of a **mined** transaction, so the signer is verified rather than assumed |
 | 9 — spend caps | `policy-engine/spend-ledger.ts` + `decimal.ts`. `ambiguous_no_retry` is counted **against** the budget and never retried; the append-only log is collapsed through `latestByPayment()` before any figure is derived from it |
 | 10 — claim → evidence → action | `review-generator/validateClaims()` on the worker; `web/lib/claims.ts` `renderClaimSentence()` is the only place a claim becomes prose |
 | 11 — secrets | CI `secret-hygiene` job; `config.ts` never logs a key (presence checks only); `EvidenceArtifactPanel` denylists credential-shaped metadata keys |

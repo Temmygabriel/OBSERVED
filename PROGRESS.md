@@ -1,12 +1,16 @@
 # Observed — Build Progress
 
-**Last updated:** 2026-09-14 (session 5, continued)
+**Last updated:** 2026-09-17 (session 6)
 **Deadline:** 2026-09-21, 09:00 GMT
-**Days remaining at last update:** 7
+**Days remaining at last update:** 4
 
 > This file is the living state of the build. It is updated at the end of every
 > working session. If you are picking this project up cold, read this file
 > first, then `MEMORY.md` for the reasoning behind the decisions.
+>
+> **Session 6 is the one that registered.** The `attributionTag` exists, is
+> proven on-chain, and is saved outside the repo. Read "Session 6" below before
+> touching anything that spends money.
 
 ---
 
@@ -53,16 +57,94 @@ Operator confirmed the first push is **"Website + skeleton"**.
 | **Worker: 422 handling** | `askbots-adapter/index.ts` — response classification + `submitWithRewrites` are **real**; only the HTTP calls are stubbed |
 | **Worker: evidence store** | `evidence-store/index.ts` — append-only, raw/record split, content-hash filenames |
 | **Worker: HTTP surface** | `src/index.ts` — `/healthz`, `/readyz`, `/status` real; `/reviews` returns 503 **with a reason** |
+| **Worker: repo collector** | `evidence-worker/collectors/repo.ts` — **complete**. `api.github.com` only, host-allowlisted. The Rule 3 trap is the whole job: GitHub's unauthenticated rate limit answers **403, not 404**, so 403/429 map to `unknown_*`. A 404 is `invalid` but with `distinguishable_from_private: false`, because unauthenticated GitHub returns 404 for a private repo too — so the claim may read "not publicly readable" and must never read "does not exist" |
+| **Worker: the thing that RUNS it** | `apps/worker/src/cli/observe.ts` + `npm run observe`. Performs one genuine observation end to end — real DNS resolver, real fetcher, real evidence store, nothing mocked, no output filtered. **This is the first code in the project's history that executes the collectors** |
+| **CI: the `observe` job** | `.github/workflows/ci.yml` — observes `https://celobuilders.xyz` with `--repo https://github.com/Temmygabriel/OBSERVED` on every push. The only job that executes the worker rather than compiling it. Exit code 0 with an `unknown_*` artifact is a **pass** (the tri-state working); non-zero means our code threw |
 
 ### Not written yet
 
 These throw a named error. They never return a plausible-looking value.
 
-- `evidence-worker/collectors/` — `screenshot.ts`, `repo.ts`
+- `evidence-worker/collectors/screenshot.ts` — the only collector needing the paid path
 - `review-generator/index.ts` — `draftClaims()` (the model call itself)
 - `payment-worker/payment-gate.ts` — `executePayment()` (the `buy` MCP call)
 - `askbots-adapter/index.ts` — `pollProjects()` and the submit HTTP call
 - Demo Mode (`replay`), public sanitized manifest
+
+### Session 6 — registered, and the tag proven on-chain
+
+**This is the session that cleared the critical path.** Sessions 4 and 5 both
+ended with Rule 8 sitting at the top of the list: every mainnet transaction sent
+before the tag existed is uncredited, and there is no backfill. That is now
+resolved.
+
+**The registration.** `PUT /submissions/me` → **200**. `status: "draft"`,
+`publishedAt: null` — registered, not yet published.
+
+| Field | Value |
+|---|---|
+| `attributionTag` | **`celo_f07034d50007`** |
+| `primaryTrack` | `judges-favorite` (see the blocker table — `askbots-growth` needs a funded AskBots project) |
+| `telegram` | `@temmygabriel` |
+| `erc8004Url` | `https://celoscan.io/nft/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/9849` |
+| `agentWalletAddress` | `0x556Ff7dD2bE1B504495288295Ad7cc3d414dd2c0` |
+| `reviewerAgentWallets` | same wallet — **undeclared reviewer agents are excluded from awards**, so this had to be here |
+| `cpayBetaOptIn` | `true` — requested; whether access was *granted* is unverified |
+
+**The tag is proven, not assumed.** Exactly as the skill doc demands
+(*"Checking once, early, is the difference between a wiring mistake costing one
+transaction and costing the whole event"*), the very next mainnet transaction
+after registration was a tag-check, and the tag was decoded back out of the
+**mined** transaction rather than out of the calldata we built:
+
+- tx `0x47431f7260aac8e4f83edbc21a0d68082efed0807c026b77debf3f28a8fefb64`
+- block **77772173**, cost **0.004529925 CELO**
+- `verify` decoded **`celo_f07034d50007`** from it
+
+So ERC-8021 (`toDataSuffix(['observed', tag])`) is wired into `tools/sign-tx.mjs`
+correctly and end to end. Rule 8 is no longer a hope; it is a demonstrated fact
+about the signer.
+
+**Balance after:** 0.464794305 CELO, **0 USDT**. The zero is what blocks the
+`askbots-growth` track — see the blocker table.
+
+**Where the secrets live.** The tag is saved at
+`~/.observed-secrets/attribution.json`, outside the repo, so `git add .` cannot
+reach it. The API key sits in `~/.observed-secrets/celobuilders.json` and is
+never printed by any tool — `celo-put.mjs` redacts it from every response it
+shows.
+
+> **A key rotation does not lose the tag.** The operator rotated the Celo
+> Builders API key on 2026-09-17. `attributionTag` is derived from the
+> `owner/repo` slug and **locked at the first save**, and a copy was captured to
+> disk the moment it was issued — so an expired or replaced key cannot take the
+> tag with it. The tag is a fact about the submission, not a property of the
+> credential.
+
+**The first execution of the collectors, ever.** `apps/worker/src/cli/observe.ts`
+and an `observe` CI job run a real observation against `https://celobuilders.xyz`
+on every push. This closes the gap that decision 16 in `MEMORY.md` called the
+project's biggest risk.
+
+Its **first** run failed — and the failure is worth recording precisely, because
+the obvious reading of it is wrong. The step exited 1, but the cause was
+`ENOENT` writing `--out observed/run.json`: under `npm run --workspace` the cwd is
+`apps/worker`, while the workflow's `mkdir -p observed` happened at the repo root.
+**The observation itself was not what failed** — the tool died writing its own
+receipt. Fixed by creating the parent directory in the tool, which is where it
+belongs: a harness bug must not be reportable as a failure of the observation.
+
+Two things about that failure are themselves the lesson:
+
+- It was **invisible**. GitHub will not hand out job logs to an unauthenticated
+  caller, and a step that pipes a process's stderr into a file reports nothing
+  but `Process completed with exit code 1.` The CLI now emits an `::error::`
+  workflow command on any failure, which *is* readable — it comes back as an
+  annotation on the commit.
+- **Whether the observation succeeded is still unconfirmed.** The run produced
+  artifacts or it did not; the log says neither. The next push settles it. Do not
+  describe the collectors as "executed and working" until a green `observe` job
+  with a visible artifact says so.
 
 ### Session 4 — the bug worth knowing about
 
@@ -117,16 +199,28 @@ The chain has a strict order, because each item needs the one above it:
 | # | Needed | Blocks | Where it comes from |
 |---|---|---|---|
 | ~~1~~ | ~~Celo mainnet wallet~~ | — | **Done.** Address above |
-| ~~2~~ | ~~Real CELO on mainnet~~ | — | **Done.** 0.51 CELO |
+| ~~2~~ | ~~Real CELO on mainnet~~ | — | **Done.** See session 6 for the current balance |
 | ~~3~~ | ~~ERC-8004 Agent ID~~ | — | **Done.** `agentId` 9849 on Celo mainnet |
-| 4 | **Personal Telegram @handle** | Registration — `telegram` is `requiredAt: registration` | Yours |
-| 5 | **Celo Builders registration + `attributionTag`** | Rule 8, and the whole submission | `PUT /submissions/me` with the registration-stage fields. Tag is `celo_` + 12 hex, derived from the repo slug, **locked at first save** |
+| ~~4~~ | ~~Personal Telegram @handle~~ | — | **Done 2026-09-17.** `@temmygabriel` |
+| ~~5~~ | ~~Celo Builders registration + `attributionTag`~~ | — | **Done 2026-09-17.** Tag `celo_f07034d50007`, proven on-chain. See session 6 |
+| ~~8~~ | ~~`buy` closed-beta opt-in~~ | — | **Done 2026-09-17.** `cpayBetaOptIn: true` was sent at registration. Whether access is *granted* is unverified — see below |
 | 6 | **AskBots API key** | AskBots Adapter, any real review submission | `POST askbots.ai/api/auth/openclaw`. Self-serve, returned **once**, unrecoverable — re-registering mints a *new identity* and discards rating and earnings |
 | 7 | **An AskBots PROJECT url for Observed** | The AskBots CLI Growth Track submission field `askbotsProjectUrl` | Observed must also exist on AskBots **as a project** (`askbots.ai/p/<id>`), not just as a reviewer |
-| 8 | **`buy` closed-beta opt-in** | Payment Worker, every real evidence purchase | `cpayBetaOptIn` at registration. `buy` is closed beta — this has lead time |
-| 9 | **Vercel account** | Public URL for the frontend | Operator chose Vercel |
+| 9 | **Vercel deployment** | Public URL for the frontend | Operator deploying as of 2026-09-17. **No environment variables are needed** — the frontend has no key of any kind |
 | — | ~~Chainstack Growth plan~~ | Nothing | **Optional.** `forno.celo.org` is free and explicitly fine. The coupon path normally means entering payment details first — do not do this |
 | — | `gh` CLI not installed | Convenience only — plain `git` push works | |
+
+**Item 7 is blocked by money, not by effort.** `askbotsProjectUrl` requires
+Observed to exist on AskBots as a funded project, and funding it needs roughly
+**$1.10 in USDT** on Celo that the operator does not have. Balance was **0 USDT**
+as of 2026-09-17. This is the single blocker between the project and the
+`askbots-growth` track. The registration therefore went in under
+**`judges-favorite`** — a working choice, and it is changeable.
+
+**Do not tell the operator to "just add funds".** That advice was already given
+and answered: the money is not there. `real-world-adoption` ($1,000 + $750)
+explicitly rewards a free product with real users, which is reachable without
+spending anything, and is the track this build should be aimed at.
 
 ### The unattributed first transaction — Rule 8, and what it actually cost
 
@@ -203,33 +297,34 @@ reason rather than showing nothing.
 
 ## Next actions, in order
 
-1. **Get the `attributionTag`, which means registering.** It is now the top of the
-   critical path, because every mainnet transaction sent before it exists is
-   uncredited. Blocked on the operator's Telegram handle (item 4).
-2. **Then wire ERC-8021 into `tools/sign-tx.mjs`** before it sends anything else:
-   `toDataSuffix(['observed', '<tag>'])` appended to calldata, then decode the
-   first tagged transaction to confirm the tag is present. Rule 8 has no backfill,
-   and the mint already spent the one transaction that could not carry it.
-3. **Write the `repo` collector** — the next one, and it needs neither a key nor
-   a wallet, because `api.github.com` is a public API. The Rule 3 trap is
-   already documented in the stub and is the whole job: GitHub's unauthenticated
-   rate limit answers **403, not 404**, and reporting a rate limit as "this
-   repository does not exist" would be a fabricated finding about someone's
-   project. 403/429 must map to `unknown_*`. A missing repo URL must produce NO
-   artifact at all — "you did not give us a repo" is not a finding.
-4. Then `screenshot` — the only collector that needs the paid path, so it waits
-   for `buy` closed-beta access. Everything it does *after* the bytes arrive is
-   already written and testable: hash, store, map a non-2xx provider response.
-5. Operator connects the repo to Vercel. The app already builds in CI, so this is
-   a configuration step, not a code step. `NEXT_PUBLIC_OBSERVED_API_URL` stays
-   unset until a worker is deployed.
-6. AskBots adapter last — the only piece needing a live key.
-7. Optional housekeeping: `package-lock.json` is generated inside CI on every run
-   but never committed, so installs are not yet reproducible and CI still takes
-   the `npm install` branch rather than `npm ci`. Committing one needs either a
-   local `npm install` (forbidden on this machine) or a CI job with
-   `contents: write` that commits it back. Vercel will produce one on first
-   deploy, which is the cheapest route.
+1. **Confirm the first real observation.** Push the `observe.ts` fix and read the
+   `observe` job. A green job with a visible artifact means the collectors have
+   run for the first time in the project's history. Until that is seen, every
+   claim about the collectors executing is still only a claim — this is the same
+   trap decision 16 records, one layer up.
+2. **Then `screenshot`** — the only collector that needs the paid path, so it
+   waits on `buy` closed-beta access actually being granted. Everything it does
+   *after* the bytes arrive is already written: hash, store, map a non-2xx
+   provider response.
+3. **Vercel.** Operator is deploying; **no environment variables are needed**.
+   The frontend holds no key of any kind. It runs in a clearly labelled sample
+   mode until a worker is deployed, and `/status` degrades to `BLOCKED` with an
+   explicit reason rather than showing nothing. `NEXT_PUBLIC_OBSERVED_API_URL`
+   stays unset until there is a worker to point at.
+   > Anything named `NEXT_PUBLIC_*` is baked into the browser bundle and readable
+   > by anyone. The wallet private key and the AskBots key must never go into
+   > Vercel, under any name.
+4. **AskBots adapter last** — the only piece needing a live key.
+5. **Optional housekeeping:** `package-lock.json` is generated inside CI on every
+   run but never committed, so installs are not yet reproducible and CI still
+   takes the `npm install` branch rather than `npm ci`. Vercel produces one on
+   first deploy, which is the cheapest route.
+
+### Cleared this session
+
+- ~~Get the `attributionTag`, which means registering.~~ **Done** — `celo_f07034d50007`, proven on-chain.
+- ~~Wire ERC-8021 into `tools/sign-tx.mjs` before it sends anything else.~~ **Done** — and verified by decoding the tag out of a mined transaction.
+- ~~Write the `repo` collector.~~ **Done** — 403/429 → `unknown_*`, 404 → `invalid` but never "does not exist".
 
 ### Tools built this session
 
@@ -303,9 +398,10 @@ interrupted session's work, both in the same direction — the tool now claims
 it** — its headline claim reads `HTTP 404 on POST /signup`, which is the spec's
 example and the behaviour with POST enabled.
 
-The gap is now narrow and specific: **one collector (`repo`), one screenshot,
-and two API calls** — not "the whole worker". The frontend is deployable as it
-stands.
+The gap is now **one collector, one screenshot, and two API calls** — not "the
+whole worker". The frontend is deployable as it stands. Session 6 closed the
+`repo` collector, so only `screenshot` remains, and that one waits on paid-path
+access rather than on code.
 
 Session 5 minted the identity — `agentId` 9849 on Celo mainnet, owned by the
 agent wallet, `tokenURI` read back from the contract — and built the signer that
@@ -321,3 +417,27 @@ visible label on every non-live record. Nothing in the UI is presented as a real
 observation when it is not. This is deliberate: the honest empty state is
 available from day one, and the real numbers replace it as they arrive. It must
 never be the other way round.
+
+Session 6 did the thing sessions 4 and 5 could not: it **made the collectors
+run**. `npm run observe` performs a genuine observation with the real resolver,
+the real fetcher and the real evidence store, and CI runs it on every push
+against a real target. That is the structural answer to decision 16 — the
+project's biggest risk was never a missing feature, it was that nothing here
+executed code, so "complete" meant "compiles" and a fetcher that sent nothing at
+all survived three sessions.
+
+The honest caveat, and it matters: **the first execution failed, and we do not
+yet know whether the observation itself worked.** The failure was the tool dying
+while writing its own output file — a harness bug, not an evidence bug — and the
+log is unreadable without admin rights on the repo, so the artifacts it produced
+were never seen. The fix is in and the CLI now reports failures in a form CI can
+surface; the next green run is what turns "the collectors execute" from an
+intention into a fact. Until an artifact has actually been read, this file should
+keep saying so.
+
+Registration is the other half. The tag exists, is locked, is stored outside the
+repo, and was **decoded back out of a mined mainnet transaction** rather than
+assumed from the calldata we built. The uncredited mint recorded above remains
+the one transaction that could not carry it — that cost was paid and is not
+recoverable, and it bought the ordering knowledge that made every later
+transaction correct.

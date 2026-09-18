@@ -27,7 +27,8 @@
  */
 
 import { lookup } from 'node:dns/promises';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { EvidenceArtifact } from '@observed/shared-types';
 import { collectEvidence, type CollectResult } from '../evidence-worker';
@@ -154,23 +155,51 @@ async function main(): Promise<number> {
   console.log(`elapsed       ${Date.now() - startedAt} ms`);
 
   if (outFile) {
+    // The directory is created, not assumed.
+    //
+    // `--out observed/run.json` is relative to the process's cwd, and under
+    // `npm run --workspace` that is the workspace directory, not the repo root.
+    // The first CI run of this tool did an hour of real observation, printed it,
+    // and then died with ENOENT writing its own receipt — a failure of the
+    // harness reported as a failure of the observation, which is exactly the
+    // confusion this project exists to prevent. Creating the parent here costs
+    // nothing and removes the whole class.
+    const outPath = resolve(outFile);
+    await mkdir(dirname(outPath), { recursive: true });
     await writeFile(
-      outFile,
+      outPath,
       `${JSON.stringify({ session_id: sessionId, target, repo_url: repoUrl ?? null, ...result }, null, 2)}\n`,
       'utf8',
     );
-    console.log(`written       ${outFile}`);
+    console.log(`written       ${outPath}`);
   }
 
   // A conclusive artifact is the goal, but an `unknown_*` is a legitimate
   // outcome and not a failure of this tool. Only our own unimplemented or
   // crashed collectors are an error.
   if (result.artifacts.length === 0) {
-    console.error('\nNo artifact was produced at all — that is a problem with our code, not the target.');
+    fail('no artifact was produced at all — that is a problem with our code, not the target');
     return 1;
   }
 
   return 0;
+}
+
+/**
+ * Report a failure of OUR code, loudly enough to survive the trip through CI.
+ *
+ * GitHub will not hand out job logs to an unauthenticated caller, and a step
+ * that redirects a process's stderr into a file reports nothing but
+ * `Process completed with exit code 1.` — so a crash here is invisible to anyone
+ * without admin rights on the repo, which is everyone reading CI from outside.
+ * A workflow command on stdout *is* readable: it comes back as an annotation on
+ * the commit. The message is escaped because a command's parameters run to the
+ * end of the line and a stray newline would swallow the rest.
+ */
+function fail(message: string): void {
+  const escaped = message.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  console.error(`::error::observe: ${escaped}`);
+  console.error(`\n${message}`);
 }
 
 main()
@@ -178,11 +207,11 @@ main()
     process.exitCode = code;
   })
   .catch((error: unknown) => {
+    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
     if (error instanceof CollectorNotImplementedError) {
-      console.error(`\n${error.message}`);
-      console.error('A collector this run asked for is not written yet.');
+      fail(`${error.message} — a collector this run asked for is not written yet.`);
     } else {
-      console.error(`\nrun failed: ${error instanceof Error ? error.message : String(error)}`);
+      fail(`observing ${process.argv[2] ?? '(no target)'} threw: ${detail}`);
     }
     process.exitCode = 1;
   });
