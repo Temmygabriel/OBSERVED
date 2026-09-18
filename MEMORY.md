@@ -559,6 +559,44 @@ mistake has now appeared three times in three different costumes — a job whose
 logs nobody could read, an address with two meanings, and a reporter that failed
 silently. Each time the fix was to make the output carry its own interpretation.
 
+### 24. 403 and 429 are refusals, not absences — now enforced in the link sweep too
+
+The second annotation run named the link that had been flapping between runs on
+the demo target: `https://www.youtube.com/watch?v=J5jC7HJMwVI`. It returned
+`invalid` on one run and `200 valid` on the next, from unchanged code, minutes
+apart. The `invalid` came from a Google/YouTube address; CI runs from a datacenter
+address, and large platforms throttle or block those routinely.
+
+`invalid` renders as **Detected**, and the Review Generator turns Detected into a
+finding. So the product would have published *"broken link"* about a link that
+works — the one class of output this codebase exists to refuse.
+
+`html-links.ts` now maps 403 and 429 to `unknown_network_error` and records
+`refused_by_status: true`, keeping the status code so a review can still say
+"returned HTTP 429" without claiming the link is dead. This is **the same rule
+`repo.ts` already applies** to GitHub's unauthenticated rate limit — the project's
+canonical Rule 3 trap. Applying it in a second place is consistency, not a new
+policy.
+
+**Two things to be honest about:**
+
+- **`unknown_network_error` is not a perfect fit.** `shared-types` describes it as
+  "the network, not the target, failed us", and a 403 is the target refusing. The
+  union has no `unknown_refused`. Adding one would be the honest fix, and because
+  `evidenceStatusToCopyState()` is an exhaustive switch, the compiler would point
+  at every place that has to decide what "refused" looks like on screen — which is
+  exactly the kind of change the types are designed to make safe. It ripples into
+  the web app, so it is a decision rather than a repair. Recorded, not done.
+- **It is not confirmed that the failing run returned 403/429.** That run predates
+  the annotation carrying `status_code` on failures, so the code was never
+  captured and cannot be recovered. The fix is correct on its own terms — a 429 is
+  never evidence about a link — but it may not be the whole explanation.
+
+**The page artifact was deliberately left alone.** A 403 on the *submitted URL* is
+arguably a real finding about the submission ("we could not read your page"),
+which is a different claim from a third-party link refusing us. That asymmetry is
+a judgement call, not an oversight.
+
 ---
 
 ## Rules that are easy to violate by accident

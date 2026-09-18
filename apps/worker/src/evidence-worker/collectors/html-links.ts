@@ -354,15 +354,42 @@ async function checkLink(args: {
       artifact: {
         ...base,
         resolved_ip: response.resolved_ip,
+        // 403 and 429 are REFUSALS, not absences.
+        //
+        // This is the same trap `repo.ts` documents for GitHub's unauthenticated
+        // rate limit, in a second place: a datacenter address is routinely
+        // throttled or blocked by large platforms, and CI runs from one. The
+        // observed evidence of that is not hypothetical — a YouTube link on the
+        // demo target returned `invalid` on one run and `200 valid` on the next,
+        // from the same code, minutes apart.
+        //
+        // `invalid` renders as Detected, and the Review Generator turns Detected
+        // into a finding. So getting this wrong publishes "broken link" about a
+        // link that works, which is the one class of output this codebase exists
+        // to refuse. The tie goes to the weaker claim.
+        //
+        // The status code is preserved in metadata, so the review can still say
+        // "returned HTTP 429" — it just cannot say the link is dead.
+        //
+        // A wrinkle worth naming rather than hiding: `unknown_network_error` is
+        // described in shared-types as "the network, not the target, failed us",
+        // and a 403 is the target refusing. The union has no `unknown_refused`,
+        // and `repo.ts` already overuses this member for the identical case, so
+        // this is consistency rather than a good fit. See MEMORY.md decision 24.
         status:
           response.status_code >= 200 && response.status_code < 300
             ? 'valid'
-            : 'invalid',
+            : response.status_code === 403 || response.status_code === 429
+              ? 'unknown_network_error'
+              : 'invalid',
         content_hash: sha256Hex(response.body),
         raw_ref: `inline://link/${slugFor(target, index)}`,
         metadata: {
           ...commonMeta,
           status_code: response.status_code,
+          // Its own field, so the review never has to re-derive "was this a
+          // refusal or a verdict?" by re-reading the status code.
+          refused_by_status: response.status_code === 403 || response.status_code === 429,
           // A POST that redirected was accepted and did something. Worth saying
           // out loud, because it is the one case where a probe had an effect.
           redirect_chain: response.redirect_chain,

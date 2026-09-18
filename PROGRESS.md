@@ -174,15 +174,27 @@ output that raises a question is not the same as output that answers one.
 Widening it to carry `final_url` and `redirect_count` cost one commit and turned
 an ambiguity into a fact. **Do this to any line before calling it evidence.**
 
-**One honest loose end.** The run before last produced an `invalid` artifact at a
-Google address (`142.251.153.119`); this run's Google-address link returned `200`.
-Same link, opposite verdicts, two runs apart — or two different links, and that
-run's bundle is not downloadable without admin rights, so it cannot be settled
-retroactively. The annotation now prints `target_url`, `href` and `error`, so the
-next occurrence will name the link. If a third-party link genuinely flaps, a
-review may report a finding that is true of the observed moment and not of the
-link — defensible, because the artifact is hash-stamped and timestamped, but it
-should be **known** rather than discovered later.
+**The flapping link, named — and fixed.** The run after this one printed
+`target_url` for every artifact, which identified it: a **YouTube** link on the
+demo target returned `invalid` on one run and `200 valid` on the next, from
+unchanged code, minutes apart. CI runs from a datacenter address and large
+platforms throttle those routinely — GitHub's own rate limit is the same
+phenomenon and is already handled in `repo.ts`.
+
+This mattered because `invalid` renders as **Detected**, and Detected becomes a
+finding: the product would have published *"broken link"* about a link that
+works. `html-links.ts` now maps 403 and 429 to `unknown_network_error` with
+`refused_by_status: true`, keeping the status code so a review can still say
+"returned HTTP 429" without claiming the link is dead. See `MEMORY.md` decision 24
+for the two honest caveats — the union has no `unknown_refused` member, and the
+original run's status code was never captured, so the fix is correct on its own
+terms but may not be the whole explanation.
+
+The earlier text of this note said the loose end "cannot be settled
+retroactively". It was settled — not by finding the old status code, but by
+making the next run print enough to identify the link. **That is the pattern worth
+keeping: when something is undiagnosable, widen the output rather than reason
+harder about the gap.**
 
 ### Session 4 — the bug worth knowing about
 
