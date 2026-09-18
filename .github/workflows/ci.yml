@@ -191,10 +191,25 @@ jobs:
             }
             const artifacts = run.artifacts ?? [];
             const skipped = run.skipped ?? [];
+            const show = (value) => {
+              const text = Array.isArray(value) ? value.join("|") : String(value);
+              return text.length > 90 ? text.slice(0, 90) + "…" : text;
+            };
             console.log(`::notice::observation produced ${artifacts.length} artifact(s); ${skipped.length} collector(s) skipped`);
             for (const a of artifacts.slice(0, 20)) {
+              const m = a.metadata ?? {};
               const level = String(a.status).startsWith("unknown_") ? "warning" : "notice";
-              console.log(`::${level}::${a.collector}: ${a.status} hash=${String(a.content_hash).slice(0, 16)} ip=${a.resolved_ip ?? "-"} at=${a.observed_at}`);
+              const bits = [`${a.collector}/${a.artifact_id}`, a.status];
+              // The address the socket connected to, and the URL it ended on.
+              // These two are what distinguish "the page moved" from "the domain
+              // has several addresses" — without both, an address that differs
+              // from the DNS answer is unreadable, which is exactly the question
+              // the first annotated run left open.
+              if (a.resolved_ip != null) bits.push(`ip=${a.resolved_ip}`);
+              for (const key of ["status_code", "content_type", "final_url", "url", "link_url", "redirect_count", "addresses", "refusal"]) {
+                if (m[key] !== undefined && m[key] !== null) bits.push(`${key}=${show(m[key])}`);
+              }
+              console.log(`::${level}::${bits.join(" ")}`);
             }
             for (const s of skipped) console.log(`::notice::skipped ${s.collector}: ${s.reason}`);
           '
