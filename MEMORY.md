@@ -426,11 +426,14 @@ creates the parent directory inside the tool, because a harness bug must never b
 reportable as a failure of the observation.
 
 **How to apply:** when adding anything that runs in CI, decide deliberately what
-its exit code means and make the *uninteresting* outcomes pass. Then remember the
-caveat this session leaves open — the first run's log was unreadable, so whether
-the observation itself produced artifacts is **still unconfirmed**. Do not
-upgrade "the collectors execute" from intention to fact until an artifact has
-actually been read. That is the same mistake decision 16 is about, one layer up.
+its exit code means and make the *uninteresting* outcomes pass. And make it
+report through **annotations**, because that is the only channel readable from
+outside the repo — a green job with no annotations is as opaque as a failed one.
+
+**The update, 2026-09-18:** it works. Eight artifacts, zero collectors skipped,
+`dns`/`tls`/`repo` all `valid`, and the page artifact recorded
+`redirect_count=1` to a Notion URL. That last field is the reason to trust the
+rest — see decision 21.
 
 ### 20. The attribution tag is a fact about the submission, not a property of the credential
 
@@ -460,6 +463,60 @@ Things about it that are easy to get wrong later:
   already been raised and answered — do not re-suggest "just add funds". Aim the
   build at `real-world-adoption` ($1,000 + $750), which explicitly rewards a free
   product with real users and costs nothing to enter.
+
+### 21. A line that raises a question is not evidence
+
+The first annotated observation printed this and looked fine:
+
+```
+html: valid ip=104.18.14.71
+dns:  valid ip=137.184.23.32
+tls:  valid ip=137.184.23.32
+```
+
+The HTML artifact's address is not the address DNS resolved. Two readings, and
+they mean opposite things: **the page redirected** to a different host (a fact
+about the target, and a citable one) or **the domain has several A records** (a
+fact about DNS, and not a fact about the project at all). The line could not tell
+them apart. That makes it *output*, not evidence — and output that raises a
+question is worse than no output, because it invites a reader to supply the
+answer themselves.
+
+Adding `final_url` and `redirect_count` cost one commit and settled it:
+`redirect_count=1`, `final_url=https://celoplatform.notion.site/Agents-at-Work-…`,
+and `addresses=137.184.23.32` showed exactly one A record. `celobuilders.xyz`
+redirects to a Notion page. Unknown → fact.
+
+**How to apply:** before calling any diagnostic line evidence, ask what a reader
+would have to assume to interpret it. If two opposite conclusions fit, the line
+is unfinished. This is Rule 2's discipline — observation and inference kept apart
+— applied to the project's own tooling rather than to its findings.
+
+### 22. Link artifacts are labelled `html`, which is a fabricated-finding risk
+
+`html.ts` returns `[pageArtifact, ...sweep.artifacts]`, and `html-links.ts` emits
+each link result with `collector: 'html'` — **the same label as the page
+artifact.** Four link results and one page result are therefore indistinguishable
+by collector; only `artifact_id` separates them.
+
+Why that matters here more than it would elsewhere: `invalid` renders as
+**Detected**, and a review turns Detected into a finding. "The page returned an
+error" and "a link on the page returned an error" are different claims about
+different subjects, and the second must never render as the first. That is the
+one class of output this codebase exists to refuse.
+
+The per-link statuses themselves are correct — each link has its own tri-state and
+none is folded into the page, which is exactly right and is why `html.ts`'s own
+comment says folding them "would destroy the tri-state". The problem is purely the
+label.
+
+**Not fixed yet, deliberately.** Changing `collector` changes the UI's grouping
+and the review's phrasing, so it is a decision rather than a repair. Recorded here
+so the next session does not rediscover it as a surprise. Related, and unresolved
+for the same reason: one run produced an `invalid` link at a Google address and
+the next produced `200` at a Google address, so a third-party link may flap
+between verdicts. The annotations now print `target_url` and `href`, so the next
+occurrence will name the link.
 
 ---
 

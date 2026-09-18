@@ -199,14 +199,19 @@ jobs:
             for (const a of artifacts.slice(0, 20)) {
               const m = a.metadata ?? {};
               const level = String(a.status).startsWith("unknown_") ? "warning" : "notice";
-              const bits = [`${a.collector}/${a.artifact_id}`, a.status];
+              // `target_url` is the URL actually probed, and it is what makes a
+              // link result attributable. Without it the four link artifacts are
+              // four statuses attached to nothing: the collector records the
+              // page's `href` in metadata and the resolved URL here, and a link
+              // result that cannot be traced to a link is not citable.
+              const bits = [`${a.collector}/${a.artifact_id}`, a.status, `url=${show(a.target_url)}`];
               // The address the socket connected to, and the URL it ended on.
               // These two are what distinguish "the page moved" from "the domain
               // has several addresses" — without both, an address that differs
               // from the DNS answer is unreadable, which is exactly the question
               // the first annotated run left open.
               if (a.resolved_ip != null) bits.push(`ip=${a.resolved_ip}`);
-              for (const key of ["status_code", "content_type", "final_url", "url", "link_url", "redirect_count", "addresses", "refusal"]) {
+              for (const key of ["status_code", "content_type", "final_url", "href", "redirect_count", "addresses", "refusal", "error"]) {
                 if (m[key] !== undefined && m[key] !== null) bits.push(`${key}=${show(m[key])}`);
               }
               console.log(`::${level}::${bits.join(" ")}`);

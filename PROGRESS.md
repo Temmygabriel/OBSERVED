@@ -1,8 +1,8 @@
 # Observed — Build Progress
 
-**Last updated:** 2026-09-17 (session 6)
+**Last updated:** 2026-09-18 (session 6, continued)
 **Deadline:** 2026-09-21, 09:00 GMT
-**Days remaining at last update:** 4
+**Days remaining at last update:** 3
 
 > This file is the living state of the build. It is updated at the end of every
 > working session. If you are picking this project up cold, read this file
@@ -141,10 +141,48 @@ Two things about that failure are themselves the lesson:
   but `Process completed with exit code 1.` The CLI now emits an `::error::`
   workflow command on any failure, which *is* readable — it comes back as an
   annotation on the commit.
-- **Whether the observation succeeded is still unconfirmed.** The run produced
-  artifacts or it did not; the log says neither. The next push settles it. Do not
-  describe the collectors as "executed and working" until a green `observe` job
-  with a visible artifact says so.
+- **A passing job was equally unreadable.** The observation succeeded on the next
+  push and there was still no way to see what it observed. So the job now
+  re-emits every artifact as a `::notice::` (or `::warning::` for `unknown_*`)
+  annotation: collector, artifact id, probed URL, status, address, status code
+  and the URL it ended on.
+
+#### The first confirmed observation — 2026-09-18
+
+Run `35324433941`, all three jobs green, **8 artifacts, 0 collectors skipped**:
+
+| Collector | Result |
+|---|---|
+| `dns` | `valid` — `addresses=137.184.23.32` (exactly one) |
+| `tls` | `valid` — connected to `137.184.23.32`, the address the guard validated |
+| `repo` | `valid` — `api.github.com` answered 200 for a public repo, not the 403 rate-limit trap |
+| `html` | `valid` — `200`, **`redirect_count=1`**, `final_url=https://celoplatform.notion.site/Agents-at-Work-Hackathon-…` |
+| `html` ×4 links | all `valid`, `200` |
+
+**`celobuilders.xyz` redirects to a Notion page.** That is the single most useful
+thing this run produced, because it settles a question the first annotated run
+raised and could not answer. That run showed the page artifact on a Cloudflare
+address while `dns` and `tls` both said `137.184.23.32` (DigitalOcean) — two
+readings with opposite meanings: *the page moved* (a fact about the target) or
+*the domain has several A records* (a fact about DNS). The redirect count settles
+it: the address moved because the **page** moved. `addresses=137.184.23.32` shows
+there is exactly one A record.
+
+The lesson is in the report, not the run. The first annotation printed an address
+that differed from DNS and was therefore **not evidence** — it was output, and
+output that raises a question is not the same as output that answers one.
+Widening it to carry `final_url` and `redirect_count` cost one commit and turned
+an ambiguity into a fact. **Do this to any line before calling it evidence.**
+
+**One honest loose end.** The run before last produced an `invalid` artifact at a
+Google address (`142.251.153.119`); this run's Google-address link returned `200`.
+Same link, opposite verdicts, two runs apart — or two different links, and that
+run's bundle is not downloadable without admin rights, so it cannot be settled
+retroactively. The annotation now prints `target_url`, `href` and `error`, so the
+next occurrence will name the link. If a third-party link genuinely flaps, a
+review may report a finding that is true of the observed moment and not of the
+link — defensible, because the artifact is hash-stamped and timestamped, but it
+should be **known** rather than discovered later.
 
 ### Session 4 — the bug worth knowing about
 
@@ -297,16 +335,25 @@ reason rather than showing nothing.
 
 ## Next actions, in order
 
-1. **Confirm the first real observation.** Push the `observe.ts` fix and read the
-   `observe` job. A green job with a visible artifact means the collectors have
-   run for the first time in the project's history. Until that is seen, every
-   claim about the collectors executing is still only a claim — this is the same
-   trap decision 16 records, one layer up.
-2. **Then `screenshot`** — the only collector that needs the paid path, so it
+1. **Change the demo target.** Every `observe` run so far points at
+   `https://celobuilders.xyz`, which redirects to the organisers' own Notion
+   page. That is a good stable smoke target and it has done its job, but Observed
+   exists to review *other people's projects* — observing the organisers proves
+   the plumbing, not the product. The honest demo is a real project submitted to
+   this event. Blocked on the AskBots key, which is what lists those projects.
+2. **Decide the `collector` label for link artifacts.** `html-links.ts:316` emits
+   them as `collector: 'html'`, the **same label as the page artifact**, so four
+   link results and one page result are indistinguishable by collector and only
+   `artifact_id` separates them. This is a fabricated-finding risk of the exact
+   kind this codebase is built to refuse: "the page returned an error" is not the
+   same claim as "a link on the page did", and the second must never render as the
+   first. Not changed yet because it alters the UI's grouping — a decision, not a
+   fix.
+3. **Then `screenshot`** — the only collector that needs the paid path, so it
    waits on `buy` closed-beta access actually being granted. Everything it does
    *after* the bytes arrive is already written: hash, store, map a non-2xx
    provider response.
-3. **Vercel.** Operator is deploying; **no environment variables are needed**.
+4. **Vercel.** Operator is deploying; **no environment variables are needed**.
    The frontend holds no key of any kind. It runs in a clearly labelled sample
    mode until a worker is deployed, and `/status` degrades to `BLOCKED` with an
    explicit reason rather than showing nothing. `NEXT_PUBLIC_OBSERVED_API_URL`
@@ -314,17 +361,21 @@ reason rather than showing nothing.
    > Anything named `NEXT_PUBLIC_*` is baked into the browser bundle and readable
    > by anyone. The wallet private key and the AskBots key must never go into
    > Vercel, under any name.
-4. **AskBots adapter last** — the only piece needing a live key.
-5. **Optional housekeeping:** `package-lock.json` is generated inside CI on every
-   run but never committed, so installs are not yet reproducible and CI still
-   takes the `npm install` branch rather than `npm ci`. Vercel produces one on
-   first deploy, which is the cheapest route.
+5. **AskBots adapter last** — the only piece needing a live key.
+6. **Optional housekeeping:** `package-lock.json` is not committed, so CI installs
+   take the `npm install` branch and are not reproducible. The CI step that
+   reports this used `hashFiles()`, which was evaluated *after* `npm install` had
+   written the file into the working tree — so it was skipped on every run and
+   read as "the lockfile is committed", the opposite of the truth. It now asks
+   git. Vercel produces a lockfile on first deploy, which is the cheapest route
+   to committing one.
 
 ### Cleared this session
 
 - ~~Get the `attributionTag`, which means registering.~~ **Done** — `celo_f07034d50007`, proven on-chain.
 - ~~Wire ERC-8021 into `tools/sign-tx.mjs` before it sends anything else.~~ **Done** — and verified by decoding the tag out of a mined transaction.
 - ~~Write the `repo` collector.~~ **Done** — 403/429 → `unknown_*`, 404 → `invalid` but never "does not exist".
+- ~~Make the collectors run at all.~~ **Done 2026-09-18** — first confirmed real observation, 8 artifacts, see above.
 
 ### Tools built this session
 
@@ -426,14 +477,19 @@ project's biggest risk was never a missing feature, it was that nothing here
 executed code, so "complete" meant "compiles" and a fetcher that sent nothing at
 all survived three sessions.
 
-The honest caveat, and it matters: **the first execution failed, and we do not
-yet know whether the observation itself worked.** The failure was the tool dying
-while writing its own output file — a harness bug, not an evidence bug — and the
-log is unreadable without admin rights on the repo, so the artifacts it produced
-were never seen. The fix is in and the CLI now reports failures in a form CI can
-surface; the next green run is what turns "the collectors execute" from an
-intention into a fact. Until an artifact has actually been read, this file should
-keep saying so.
+The caveat this file carried for a day — "the collectors have a way to run, but
+no artifact has ever been read" — is now **retired**. A green `observe` job with
+eight attributed artifacts is on the commit history, and the numbers in that
+table came out of the program, not out of a document.
+
+What replaced it is a smaller and more honest gap: the collectors observe
+**`celobuilders.xyz`**, which redirects to the organisers' own Notion page. That
+proves the plumbing end to end — real DNS, a real TLS handshake against the
+validated address, a real redirect chain, a real public API — but it is not a
+review of anyone's project. The product claim is that Observed can look at a
+stranger's submission and say something true and cited about it. That claim is
+**still unproven**, and it stays unproven until the demo target is a real event
+submission rather than the organisers' own site.
 
 Registration is the other half. The tag exists, is locked, is stored outside the
 repo, and was **decoded back out of a mined mainnet transaction** rather than
