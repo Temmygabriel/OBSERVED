@@ -253,6 +253,39 @@ jobs:
           }
           NODE
 
+      # The step the whole project is for.
+      #
+      # Everything above proves the collectors ran. None of it says anything
+      # about the product, because the product is the REVIEW — and until this
+      # step existed, no review could be produced anywhere, by any route: the
+      # drafting step threw unconditionally, so the pipeline terminated in a
+      # throw and the sentences that are the entire deliverable did not exist.
+      #
+      # So this drafts from the bundle the observation just wrote, runs the
+      # claims through the same validator the app uses, and emits the rendered
+      # text as a notice. The review is then readable on the commit by anyone,
+      # with no token and no admin rights, which is the same constraint that
+      # shaped the annotation step above.
+      #
+      # `if: always()` because a bundle worth drafting from may exist even when
+      # the observation step failed late. The guard is on the file, not the
+      # previous step's conclusion.
+      #
+      # `set -o pipefail` matters here: a non-zero exit means the validator
+      # refused a claim the drafter built from a collected artifact, which
+      # cannot happen unless the drafter is wrong. That is a real bug and it
+      # should turn the job red rather than scroll past in a log nobody can read.
+      - name: Draft the review from that observation
+        if: always()
+        run: |
+          set -o pipefail
+          if [ -f "$GITHUB_WORKSPACE/observed/run.json" ]; then
+            npm run draft --workspace @observed/worker -- \
+              "$GITHUB_WORKSPACE/observed/run.json" 2>&1 | tee draft.log
+          else
+            echo "::warning::no observation bundle was written, so there was nothing to draft from"
+          fi
+
       - name: Publish the observation
         if: always()
         run: |
@@ -264,6 +297,14 @@ jobs:
             echo '```'
             tail -c 100000 observe.log 2>/dev/null || echo '(no output was produced)'
             echo '```'
+            echo ''
+            echo '## Review drafted from that observation'
+            echo ''
+            echo 'Rendered from the validated claim record, not written freely.'
+            echo ''
+            echo '```'
+            tail -c 100000 draft.log 2>/dev/null || echo '(no draft was produced)'
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the evidence bundle
@@ -274,4 +315,5 @@ jobs:
           path: |
             observed/run.json
             observe.log
+            draft.log
           if-no-files-found: warn

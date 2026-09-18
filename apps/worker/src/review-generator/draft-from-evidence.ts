@@ -157,6 +157,10 @@ function dnsClaims(artifact: EvidenceArtifact): ReviewClaim[] {
 
   const addresses = strList(m, 'addresses');
   const nonPublic = strList(m, 'non_public_addresses');
+  // Named in the observation, not just implied by the artifact: a review
+  // sentence reading "the hostname resolves to 1.2.3.4" does not say which
+  // hostname, and a claim a reader cannot tie to a name is not citable.
+  const hostname = str(m, 'hostname') ?? artifact.target_url;
 
   if (nonPublic.length > 0) {
     // `dns.ts` sets `invalid` for this, and it is a citable finding about the
@@ -168,7 +172,7 @@ function dnsClaims(artifact: EvidenceArtifact): ReviewClaim[] {
         artifact,
         'non-public',
         'metadata.non_public_addresses',
-        `the hostname resolves to non-public addresses: ${nonPublic.join(', ')}`,
+        `${hostname} resolves to non-public addresses: ${nonPublic.join(', ')}`,
         'the domain does not point at publicly routable address space',
         'point the domain at a public address',
         'high',
@@ -216,7 +220,7 @@ function dnsClaims(artifact: EvidenceArtifact): ReviewClaim[] {
       artifact,
       'resolves',
       'metadata.addresses',
-      `the hostname resolves to ${addresses.join(', ')}${count > 1 ? ` (${count} addresses)` : ''}`,
+      `${hostname} resolves to ${addresses.join(', ')}${count > 1 ? ` (${count} addresses)` : ''}`,
       'the domain is publicly resolvable',
       '',
       'high',

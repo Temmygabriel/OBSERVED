@@ -198,7 +198,12 @@ async function main(): Promise<number> {
  */
 function fail(message: string): void {
   const escaped = message.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
-  console.error(`::error::observe: ${escaped}`);
+  // The command goes to STDOUT, because that is the stream the runner parses for
+  // workflow commands. Writing it to stderr — which is where an error message
+  // naturally belongs, and where this originally went — risks it being read as
+  // ordinary log text and never surfacing as an annotation, which is the one
+  // thing it exists to do. The human-readable copy still goes to stderr.
+  console.log(`::error::observe: ${escaped}`);
   console.error(`\n${message}`);
 }
 
