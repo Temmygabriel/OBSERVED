@@ -1,16 +1,22 @@
 # Observed — Build Progress
 
-**Last updated:** 2026-09-18 (session 6, continued)
+**Last updated:** 2026-09-19 (session 6, continued)
 **Deadline:** 2026-09-21, 09:00 GMT
-**Days remaining at last update:** 3
+**Days remaining at last update:** 2
 
 > This file is the living state of the build. It is updated at the end of every
 > working session. If you are picking this project up cold, read this file
 > first, then `MEMORY.md` for the reasoning behind the decisions.
 >
-> **Session 6 is the one that registered.** The `attributionTag` exists, is
-> proven on-chain, and is saved outside the repo. Read "Session 6" below before
-> touching anything that spends money.
+> **Session 6 is the one that registered, and the one that got a review out.**
+> The `attributionTag` exists, is proven on-chain, and is saved outside the
+> repo. Read "Session 6" below before touching anything that spends money.
+>
+> **The product now produces output.** Until 2026-09-19 no review could be
+> produced by any route: `draftClaims()` threw unconditionally, so the pipeline
+> terminated in a throw and the sentences that are the entire deliverable did
+> not exist. CI now drafts a review from a real observation on every push and
+> publishes the text as an annotation. See "The first review, 2026-09-19".
 
 ---
 
@@ -52,7 +58,10 @@ Operator confirmed the first push is **"Website + skeleton"**.
 | **Worker: TLS collector** | `evidence-worker/collectors/tls.ts` — **complete**. Real handshake against the pinned address with `servername` preserved, so SNI and certificate verification are untouched and DNS re-resolution is impossible. Records subject/issuer, validity window, sha256 fingerprint, protocol, cipher. `rejectUnauthorized` is never false |
 | **Worker: link sweep** | `evidence-worker/collectors/html-links.ts` — **complete**. One artifact per link, each with its own tri-state, none folded into the page. Script/style/comment content is stripped first so a script string cannot become a fabricated broken link. Sequential, capped at 12, and the skips are counted rather than dropped |
 | **Worker: policy gate** | `policy-engine/index.ts` — `evaluateProject`, exclusion before spend |
-| **Worker: review validation** | `review-generator/index.ts` — `validateClaims` + `renderDraft` are **real**; only the model call is stubbed |
+| **Worker: review validation** | `review-generator/index.ts` — `validateClaims` + `renderDraft` are **real**, and as of 2026-09-19 so is `draftClaims()`. It delegates to the deterministic drafter below rather than calling a model — see `MEMORY.md` decision 25 for why that is the stronger position, not a shortcut |
+| **Worker: claim drafter** | `review-generator/draft-from-evidence.ts` — **complete**. Builds claims from the collectors' own recorded fields, one set per artifact. Every claim cites a held artifact and carries a non-empty observation *by construction*, so a claim the validator refuses is a bug here rather than a judgement call there. `unknown_*` artifacts get exactly one claim with an empty inference and `unable_to_verify` (Rule 3). Link artifacts are told apart from the page by `raw_ref`, the only field that separates them |
+| **Worker: the thing that DRAFTS** | `apps/worker/src/cli/draft.ts` + `npm run draft`. Reads the bundle `observe.ts` wrote, drafts, validates, renders, and prints. **This is the only code in the project that produces the product** |
+| **CI: the draft step** | `.github/workflows/ci.yml` — runs the drafter on the bundle the observe job just wrote and emits the rendered review as an annotation, so the product's own output is readable on the commit with no token. A held review is an **error** here: with a deterministic drafter it can only mean the drafter built something unsupportable |
 | **Worker: payment policy** | `payment-worker/payment-gate.ts` — provider allowlist, attribution refusal (Rule 8), `mayRetry` are **real**; only the `buy` call is stubbed |
 | **Worker: 422 handling** | `askbots-adapter/index.ts` — response classification + `submitWithRewrites` are **real**; only the HTTP calls are stubbed |
 | **Worker: evidence store** | `evidence-store/index.ts` — append-only, raw/record split, content-hash filenames |
@@ -66,7 +75,6 @@ Operator confirmed the first push is **"Website + skeleton"**.
 These throw a named error. They never return a plausible-looking value.
 
 - `evidence-worker/collectors/screenshot.ts` — the only collector needing the paid path
-- `review-generator/index.ts` — `draftClaims()` (the model call itself)
 - `payment-worker/payment-gate.ts` — `executePayment()` (the `buy` MCP call)
 - `askbots-adapter/index.ts` — `pollProjects()` and the submit HTTP call
 - Demo Mode (`replay`), public sanitized manifest
@@ -195,6 +203,64 @@ retroactively". It was settled — not by finding the old status code, but by
 making the next run print enough to identify the link. **That is the pattern worth
 keeping: when something is undiagnosable, widen the output rather than reason
 harder about the gap.**
+
+### The first review, 2026-09-19
+
+**Until this session, no review could be produced by any route.** `validateClaims`
+was real, `renderDraft` was real, and `draftClaims()` — the step that produces
+anything to say — threw unconditionally. The pipeline was complete except for its
+content, so the product's central deliverable, a review whose every sentence cites
+a hash-verified artifact, did not exist. Every CI run up to this point compiled the
+whole thing and never once showed what it produces.
+
+`draftClaims()` now delegates to `review-generator/draft-from-evidence.ts`, which
+is **deterministic and not a model call**. The argument is structural rather than
+pragmatic, and it is `MEMORY.md` decision 25: `validateClaims` is the gate, so a
+model and a deterministic function are held to exactly the same standard; what
+differs is the failure mode. A model can invent a plausible claim that passes.
+This cannot invent anything, because it can only restate fields the collectors
+recorded. A model is not excluded from the design, only from the critical path.
+
+CI run `35371381202` drafted **7 claims from 8 artifacts, 0 held**, and published
+the text as an annotation on the commit:
+
+> The domain is publicly resolvable, observed as celobuilders.xyz resolves to
+> 137.184.23.32. The page is publicly reachable and served without authentication,
+> observed as the URL returned HTTP 200 after 1 redirect, ending at
+> https://celoplatform.notion.site/Agents-at-Work-Hackathon-…. The page declares
+> its own subject, which can be compared against the project description, observed
+> as the document title is "Agents at Work Hackathon | Notion". Traffic to this
+> host is encrypted with a currently-valid certificate, observed as a TLS
+> handshake completed on port 443, for celobuilders.xyz, issued by YE1, valid until
+> Nov 1 10:06:50 2026 GMT, 43 days remaining. The source code is available for
+> inspection without authentication, observed as the repository
+> Temmygabriel/OBSERVED is publicly readable, with default branch main, last
+> committed to at 2026-09-18T16:56:03Z. The project has been changed at least once
+> at or after this date, observed as the most recent commit on the default branch
+> is dated 2026-09-18T16:56:03Z. The terms under which others may use this code are
+> not stated, observed as no licence file was found at the repository root.
+
+**Reading it as a reviewer would turned up two flaws that staring at the drafter
+would never have shown**, which is the whole reason for getting output in front of
+someone:
+
+- **The same fact twice, in consecutive sentences.** The commit timestamp appeared
+  in the `readable` claim's observation *and* had its own claim. It now appears
+  once. Padding a review with a restatement makes it look like it knows more than
+  it does.
+- **Four link artifacts contributed nothing.** Healthy links produce no claim by
+  design, so the review read as though no external link had been checked. The page
+  record carries the sweep's own `links_*` counts precisely so coverage is
+  inspectable, so there is now one claim citing the page. It counts **coverage and
+  nothing else** — `links_checked` is how many links were *probed*, so a 404 counts
+  as checked, and reading health out of it would assert something the record does
+  not contain.
+
+**What this does and does not prove.** It proves the loop closes: real observation
+→ claims → validation → rendered text, on every push, readable without a token.
+It does **not** prove the product, because the target is still the organisers' own
+site and the operator's own repo. Observed exists to review *other people's*
+projects, and that is next action 1.
 
 ### Session 4 — the bug worth knowing about
 
@@ -509,3 +575,17 @@ assumed from the calldata we built. The uncredited mint recorded above remains
 the one transaction that could not carry it — that cost was paid and is not
 recoverable, and it bought the ordering knowledge that made every later
 transaction correct.
+
+The gap this file described as *"the product's central claim is a review whose
+every sentence cites a hash-verified artifact, and there was no review"* is now
+**closed**. `draftClaims()` was the last step that threw, and it no longer does.
+A review is drafted from a real observation on every push and its text is on the
+commit, in the only channel readable without a token.
+
+That closes the loop but does not yet demonstrate the product, and the two should
+not be confused. Everything above still observes `celobuilders.xyz` and
+`github.com/Temmygabriel/OBSERVED` — the organisers' site and the operator's own
+repo. The review that came out of it is **true and cited**, and it is also a
+review of people who are not being reviewed. The step that turns this from a
+working pipeline into a working product is pointing it at a stranger's submission,
+which needs the AskBots key.

@@ -116,6 +116,14 @@ export function validateClaims(
  * property of the code rather than a promise in a README.
  */
 export function renderDraft(claims: readonly ReviewClaim[]): string {
+  // A claim with no inference produces a bare observation, and that observation
+  // still has to open a sentence. It is capitalised here rather than in the
+  // drafter because this is the function that decides where sentences begin —
+  // and the first real review shipped with two sentences starting lowercase
+  // ("the page declares 4 links and forms…") for want of this line.
+  const sentenceCase = (text: string): string =>
+    text === '' ? text : `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
   const sentences = claims.map((claim) => {
     const observation = claim.observation.trim().replace(/\.+$/, '');
     const inference = claim.inference.trim().replace(/\.+$/, '');
@@ -126,8 +134,8 @@ export function renderDraft(claims: readonly ReviewClaim[]): string {
         : `Unable to verify: ${observation}.`;
     }
 
-    if (inference === '') return `${observation}.`;
-    return `${inference.charAt(0).toUpperCase()}${inference.slice(1)}, observed as ${observation}.`;
+    if (inference === '') return `${sentenceCase(observation)}.`;
+    return `${sentenceCase(inference)}, observed as ${observation}.`;
   });
 
   return sentences.join(' ');

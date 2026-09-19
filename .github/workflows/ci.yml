@@ -101,6 +101,44 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The repository had no tests at all until this step. The gap it closes is
+      # specific: the collectors had a way to run and the review loop did not, so
+      # "the review is correct" was a claim only a CI annotation could support,
+      # and only for the one target it happened to run against.
+      #
+      # These tests are mostly NEGATIVE — they assert that a particular sentence
+      # is absent from the output. That is the shape the risk takes here: a bug
+      # in this code does not throw, it publishes a confident, cited, false
+      # sentence about somebody else's project.
+      #
+      # Test failures are re-emitted as annotations for the same reason the
+      # compiler errors are: job logs need admin rights and annotations do not.
+      - name: Test
+        run: |
+          set -o pipefail
+          # The failure is CAPTURED, not propagated. The default shell here is
+          # `bash -e`, so a bare failing command ends the step immediately and the
+          # annotation grep below would never run — leaving the only readable
+          # failure signal unemitted, in precisely the case it exists for. The
+          # typecheck step above captures the same way, for the same reason.
+          failed=0
+          npm test --workspaces --if-present 2>&1 | tee test.log || failed=1
+
+          grep -E '^(not ok|# fail)' test.log | head -20 | sed -e 's/%/%25/g' -e 's/^/::error::/' || true
+
+          exit $failed
+
+      - name: Publish test output
+        if: always()
+        run: |
+          {
+            echo '## Test output'
+            echo ''
+            echo '```'
+            tail -c 100000 test.log 2>/dev/null || echo '(no test.log was produced)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build
         run: npm run build
 
