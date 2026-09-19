@@ -446,6 +446,40 @@ function pageClaims(artifact: EvidenceArtifact): ReviewClaim[] {
     );
   }
 
+  // WHAT THE SWEEP COVERED, IN ONE SENTENCE — and why it is not one claim per link.
+  //
+  // Healthy links produce no claim of their own (see `linkClaims`), so without
+  // this the link artifacts contributed nothing at all and the review read as
+  // though no external link had ever been checked. The facts here are the page
+  // record's own `links_*` accounting — `html.ts` spreads the sweep's counts
+  // onto the page artifact precisely so the coverage is inspectable — so this
+  // cites the page, not the links, and invents nothing.
+  //
+  // IT COUNTS COVERAGE AND NOTHING ELSE. `links_checked` is how many links were
+  // PROBED, not how many worked: a link that returned 404 counts as checked.
+  // Reading health out of this number would assert something the page record
+  // does not contain — and a broken link already has a claim of its own, citing
+  // its own artifact. Hence no inference and no action here.
+  //
+  // The skipped count is stated rather than hidden: a review that checked 12 of
+  // 60 links should say so. That is a limit of OUR sweep, not a defect in their
+  // project, so it carries no action for them to take.
+  const linksFound = num(m, 'links_found');
+  const linksChecked = num(m, 'links_checked');
+
+  if (linksFound !== null && linksFound > 0 && linksChecked !== null) {
+    const overCap = num(m, 'links_skipped_over_cap') ?? 0;
+    const unsupported = num(m, 'links_skipped_unsupported') ?? 0;
+
+    const parts = [
+      `the page declares ${linksFound} link${linksFound === 1 ? '' : 's'} and form${linksFound === 1 ? '' : 's'}, of which ${linksChecked} ${linksChecked === 1 ? 'was' : 'were'} probed`,
+    ];
+    if (overCap > 0) parts.push(`${overCap} left unprobed beyond the per-page limit`);
+    if (unsupported > 0) parts.push(`${unsupported} not fetchable (mailto, tel or javascript)`);
+
+    claims.push(makeClaim(artifact, 'links', 'metadata.links_checked', parts.join(', '), '', '', 'high'));
+  }
+
   return claims;
 }
 
@@ -566,9 +600,14 @@ function repoClaims(artifact: EvidenceArtifact): ReviewClaim[] {
   const headCommitAt = str(m, 'head_commit_at');
   const hasLicense = bool(m, 'has_license');
 
+  // The commit date is deliberately NOT repeated here. It used to be, and the
+  // rendered review said "last committed to at 2026-09-18T16:56:03Z" in one
+  // sentence and "the most recent commit on the default branch is dated
+  // 2026-09-18T16:56:03Z" in the very next one — the same fact twice, which
+  // reads as padding and makes the review look longer than what it knows. The
+  // date belongs to the claim below, which is about the date.
   const parts = [`the repository ${fullName} is publicly readable`];
   if (branch !== null) parts.push(`with default branch ${branch}`);
-  if (headCommitAt !== null) parts.push(`last committed to at ${headCommitAt}`);
 
   const claims: ReviewClaim[] = [
     makeClaim(
@@ -583,15 +622,20 @@ function repoClaims(artifact: EvidenceArtifact): ReviewClaim[] {
   ];
 
   if (headCommitAt !== null) {
+    // No inference, and that is the honest choice rather than an omission. The
+    // observation is a date. What it *implies* — that the project is maintained,
+    // or abandoned, or done — depends on reading that date against a deadline
+    // this code cannot see, and Rule 2 keeps judgment out of here. With an empty
+    // inference `renderDraft` emits the plain sentence and asserts nothing.
     claims.push(
       makeClaim(
         artifact,
         'activity',
         'metadata.head_commit_at',
         `the most recent commit on the default branch is dated ${headCommitAt}`,
-        'the project has been changed at least once at or after this date',
         '',
-        'medium',
+        '',
+        'high',
       ),
     );
   }
