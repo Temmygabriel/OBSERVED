@@ -39,7 +39,12 @@ function artifact(over: Partial<EvidenceArtifact> & { collector: CollectorKind }
   return {
     artifact_id: `ev-test-${over.collector}`,
     review_session_id: 'test-session',
-    collector: over.collector,
+    // `collector` is deliberately NOT set here: it arrives in the `...over`
+    // spread below, which is where its type is enforced. Naming it twice made
+    // the first value dead code, and TypeScript refuses that (TS2783) rather
+    // than let a field look set while being overwritten — which is the right
+    // call, because the two would eventually disagree and the override would
+    // win silently.
     collector_version: '0.1.0',
     target_url: 'https://example.test/',
     resolved_ip: null,
@@ -333,7 +338,7 @@ for (const { name, build } of UNKNOWN_CASES) {
 }
 
 test('a link refused with 429 is never published as a broken link', async () => {
-  const claims = draftClaimsFromEvidence(UNKNOWN_CASES[4]!.build());
+  const claims = draftClaimsFromEvidence([UNKNOWN_CASES[4]!.build()]);
   const text = await review([UNKNOWN_CASES[4]!.build()]);
 
   assert.ok(!text.includes('broken'), 'a throttled link is not a broken link');
@@ -553,7 +558,7 @@ test('the page claim reports link coverage without claiming the links work', asy
     },
   });
 
-  const claims = draftClaimsFromEvidence(one);
+  const claims = draftClaimsFromEvidence([one]);
   const links = claims.find((c) => c.claim_id.endsWith('#links'));
   assert.ok(links, 'a page with links must report coverage');
   const coverage = links!;
