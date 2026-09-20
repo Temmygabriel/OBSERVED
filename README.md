@@ -6,7 +6,7 @@ Most AI "reviewer" products generate confident prose from a prompt and nothing e
 
 It never says "looks good". It says `POST /signup → 404, observed 09:14:32 UTC`, with a receipt.
 
-Built for the Celo **Agents at Work** hackathon, AskBots CLI Growth Track. Submission deadline **21 September 2026, 09:00 GMT**.
+Built for the Celo **Agents at Work** hackathon, **Judges' Favorite** track. Submission deadline **21 September 2026, 09:00 GMT**.
 
 ---
 
@@ -24,11 +24,14 @@ This is a live repository, not a finished product. Here is the honest split.
 | Spend ledger + caps (Rule 9) | **Done** |
 | Hash-chained audit ledger | **Done** |
 | Watchdog state machine (Rules 7, 12) | **Done** |
-| DNS collector | **Done** |
-| HTML / TLS / screenshot / repo collectors | **Not written yet** |
-| Review Generator (the model call) | **Not written yet** |
-| Payment Worker (the `buy` call) | **Not written yet** |
-| AskBots adapter (HTTP calls) | **Not written yet** |
+| Collectors — DNS, TLS, HTML, links, repo | **Done, and executed on every push** |
+| Review generator (claim → evidence → action) | **Done, and drafts a real review on every push** |
+| Screenshot collector | **Not written** — needs paid-path access |
+| Payment Worker (the `buy` call) | **Not written** |
+| AskBots adapter (the HTTP calls) | **Not written** |
+| Worker `/reviews` endpoint | **Not written** — answers 503 with a reason |
+
+The distinction the table is really drawing is **compiled** versus **executed**. Everything marked done is not merely written: the `observe` CI job runs the collectors against a real target on every push, and the `draft` step turns that observation into a real review. Both the artifact table and the rendered review are emitted as annotations on the commit, so they can be read without a token or admin rights on this repository. A row marked "done" that nothing executes would be exactly the kind of claim this project exists to refuse.
 
 Modules that are not written yet **throw a named error instead of returning something plausible**. A collector that has not been built does not produce an `unknown_*` evidence artifact, because `unknown_*` is a statement about the target — "we could not reach it" — and unfinished code of ours is not a fact about someone else's project. Those two things staying separate is most of what this codebase is about.
 
@@ -62,7 +65,7 @@ npm run dev:web             # http://localhost:3000
 
 With no worker configured, the site runs in its honest empty state: it says nothing has been checked yet, and offers a review of `sample` that is **labelled as a sample** on every screen it appears on. It will not invent numbers to fill space.
 
-Worker (once its modules are written):
+Worker (once its remaining modules are written):
 
 ```bash
 npm start --workspace @observed/worker
@@ -72,10 +75,41 @@ npm start --workspace @observed/worker
 
 ```bash
 npm run typecheck     # both apps + shared types
+npm test              # the review generator's test suite
 npm run build         # production build of the web app
 ```
 
-CI runs both on every push. It also runs a **secret-hygiene** job that fails the build if a real `.env` is ever committed, or if `.env.example` ever declares a non-empty secret value. Rule 11 is enforced by a machine rather than by good intentions.
+```bash
+# One real observation, end to end, writing a bundle you can read.
+npm run observe --workspace @observed/worker -- \
+  https://celobuilders.xyz \
+  --repo https://github.com/Temmygabriel/OBSERVED \
+  --out ./observed/run.json
+
+# Draft the review from that bundle, through the same validator the app uses.
+npm run draft --workspace @observed/worker -- ./observed/run.json
+```
+
+CI runs all of these on every push, plus a **secret-hygiene** job that fails the build if a real `.env` is ever committed or if `.env.example` ever declares a non-empty secret value. Rule 11 is enforced by a machine rather than by good intentions.
+
+The `observe` job is the one that matters most, because it is the only job that **executes** the worker instead of compiling it. Its exit code carries a deliberate distinction: a target that cannot be reached produces an `unknown_*` artifact and exits **0**, because that is the tri-state working rather than a failure. A non-zero exit means our code threw — which is the class of bug a type checker cannot see. An earlier fetcher sent nothing at all and survived three sessions for want of exactly this job.
+
+### The tests are mostly negative
+
+They assert that a particular sentence is **absent** from the output. That is the shape the risk takes here: a bug in this code does not throw, it publishes a confident, cited, **false** sentence about somebody else's project. A test that only checked the happy path would miss the only failure that matters.
+
+---
+
+## Identity and registration
+
+| Field | Value |
+| --- | --- |
+| ERC-8004 `agentId` | `9849` — [`celoscan.io/nft/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/9849`](https://celoscan.io/nft/0x8004a169fb4a3325136eb29fa0ceb6d2e539a432/9849) |
+| Attribution tag (ERC-8021) | assigned at registration, stored **outside** this repository so `git add .` cannot reach it |
+| Agent wallet | `0x556Ff7dD2bE1B504495288295Ad7cc3d414dd2c0` |
+| Network | Celo **mainnet** only |
+
+The attribution tag's presence on a mainnet transaction is not assumed from the calldata we build. It was decoded back out of a **mined** transaction — block `77772173` — so the signer is verified rather than merely exercised. `payment-gate.ts` refuses to broadcast an untagged transaction, and there is no backfill path: a transaction that settles untagged cannot be retroactively tagged, because the money has already moved. That is not hypothetical here — the identity mint at block `77509666` predates the tag and is permanently uncredited.
 
 ---
 
