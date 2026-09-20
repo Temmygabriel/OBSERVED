@@ -9,6 +9,7 @@
     "start": "tsx src/index.ts",
     "observe": "tsx src/cli/observe.ts",
     "draft": "tsx src/cli/draft.ts",
+    "manifest": "tsx src/cli/manifest.ts",
     "test": "tsx --test src/review-generator/review.test.ts",
     "typecheck": "tsc --noEmit"
   },

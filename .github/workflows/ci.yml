@@ -178,6 +178,15 @@ jobs:
   observe:
     name: Observe a real target
     runs-on: ubuntu-latest
+    # `contents: write` is for ONE step below: publishing the audit manifest back
+    # to the repository. It is scoped to this job rather than the workflow so the
+    # typecheck and secret-hygiene jobs keep a read-only token.
+    #
+    # This does not create a push loop. GitHub suppresses workflow runs for events
+    # raised by the default GITHUB_TOKEN, so the commit this job makes cannot
+    # retrigger it. The `[skip ci]` marker is belt-and-braces on top of that.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -379,6 +388,56 @@ jobs:
             echo "::warning::no observation bundle was written, so there was nothing to draft from"
           fi
 
+      # The build spec asks for a sanitized public manifest "so a judge can
+      # independently check the claim-to-evidence chain". Everything needed to
+      # satisfy that already existed and was never assembled: the artifacts carry
+      # content hashes, the claims carry the id of the artifact they cite, and the
+      # drafter is deterministic, so the manifest is a pure function of the bundle.
+      #
+      # The manifest is REGENERATED here from the run's own bundle rather than
+      # read back from a file committed earlier. A manifest that is copied forward
+      # can attest to claims the pipeline no longer produces, which would make it
+      # decorative — the exact thing it exists to rule out.
+      - name: Generate the public audit manifest
+        if: always()
+        run: |
+          set -o pipefail
+          if [ -f "$GITHUB_WORKSPACE/observed/run.json" ]; then
+            npm run manifest --workspace @observed/worker -- \
+              "$GITHUB_WORKSPACE/observed/run.json" \
+              --out "$GITHUB_WORKSPACE/manifest/latest.json" 2>&1 | tee manifest.log
+          else
+            echo "::warning::no observation bundle was written, so no manifest could be generated"
+          fi
+
+      # Committed by the machine, from the run that produced it, so the published
+      # manifest is never hand-edited and always corresponds to a real observation
+      # on a real commit.
+      #
+      # No `git pull` before the push: this job is the only writer of this one
+      # file, and `concurrency` above already cancels superseded runs by ref. If a
+      # race ever does occur, the push fails loudly and the job goes red, which is
+      # the correct outcome — a manifest silently dropped is worse than a red X.
+      - name: Publish the manifest back to the repository
+        if: always() && github.event_name == 'push'
+        run: |
+          if [ ! -f "$GITHUB_WORKSPACE/manifest/latest.json" ]; then
+            echo "No manifest was generated; nothing to publish."
+            exit 0
+          fi
+          cd "$GITHUB_WORKSPACE"
+          git config user.name "observed-ci"
+          git config user.email "observed-ci@users.noreply.github.com"
+          git add manifest/latest.json
+          if git diff --cached --quiet; then
+            # An unchanged manifest is the expected case on a docs-only push: the
+            # target is the same, so the observation and the manifest are the same.
+            echo "Manifest is unchanged; nothing to commit."
+          else
+            git commit -m "Publish the audit manifest produced by ${GITHUB_SHA::7} [skip ci]"
+            git push
+          fi
+
       - name: Publish the observation
         if: always()
         run: |
@@ -398,6 +457,15 @@ jobs:
             echo '```'
             tail -c 100000 draft.log 2>/dev/null || echo '(no draft was produced)'
             echo '```'
+            echo ''
+            echo '## Public audit manifest'
+            echo ''
+            echo 'Regenerated from this run. A claim whose cited artifact is absent'
+            echo 'from the manifest fails the step, so every claim below resolves.'
+            echo ''
+            echo '```'
+            tail -c 40000 manifest.log 2>/dev/null || echo '(no manifest was produced)'
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the evidence bundle
@@ -409,4 +477,6 @@ jobs:
             observed/run.json
             observe.log
             draft.log
+            manifest.log
+            manifest/latest.json
           if-no-files-found: warn
