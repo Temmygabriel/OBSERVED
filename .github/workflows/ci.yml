@@ -208,6 +208,61 @@ jobs:
             --repo https://github.com/Temmygabriel/OBSERVED \
             --out "$GITHUB_WORKSPACE/observed/run.json" 2>&1 | tee observe.log
 
+      # Rule 5 is the rule that says this reviewer must never review its own
+      # entry, and until this step existed it had a tested mechanism and NO
+      # CALLER — so "the exclusion list is configured" was an assertion about a
+      # file rather than a fact about the running system.
+      #
+      # This points the real CLI at the operator's own repository with the
+      # operator's own identifiers in the list, and requires the refusal. It is
+      # the only target in the world this reviewer is forbidden to look at, so
+      # it is the only target that can demonstrate the rule.
+      #
+      # Note what this exposes, because it is worth being honest about rather
+      # than hoping nobody notices: the observation step ABOVE passes
+      # `--repo https://github.com/Temmygabriel/OBSERVED`, which is the
+      # operator's own project. That step is a diagnostic — it proves the
+      # collectors reach the network and produce artifacts — and it is why
+      # EXCLUSION_LIST is deliberately NOT set on it. If it were set there, this
+      # refusal is exactly what would happen to the whole flagship job, which is
+      # the rule working correctly. A review of that repository must never be
+      # published; an observation of it, in CI, to prove the plumbing, is a
+      # different act and is not submitted to anyone.
+      - name: Prove Rule 5 refuses our own entry
+        run: |
+          set -o pipefail
+          # No apostrophes anywhere in these reasons, deliberately. This JSON
+          # lives inside a bash single-quoted string, and inside single quotes an
+          # apostrophe cannot be escaped — `''` ends the string and starts a new
+          # one, so the character silently disappears and the reason reads
+          # "Observeds own operator". A wrong string that still parses is worse
+          # than a syntax error, so the wording avoids the character entirely.
+          #
+          # The list is inline rather than a repository secret so that a judge
+          # can read exactly what is being excluded and confirm the check is
+          # aimed at something real. These are all public identifiers.
+          export EXCLUSION_LIST='[
+            {"type":"github_owner","value":"Temmygabriel","reason":"the GitHub account that operates Observed"},
+            {"type":"telegram_handle","value":"temmygabriel","reason":"the Telegram handle registered for Observed"},
+            {"type":"erc8004_agent_id","value":"9849","reason":"the ERC-8004 identity minted by Observed"},
+            {"type":"wallet_address","value":"0x556Ff7dD2bE1B504495288295Ad7cc3d414dd2c0","reason":"the agent wallet used by Observed"}
+          ]'
+
+          npm run observe --workspace @observed/worker -- \
+            https://github.com/Temmygabriel/OBSERVED \
+            --repo https://github.com/Temmygabriel/OBSERVED \
+            --out "$GITHUB_WORKSPACE/observed/excluded.json" 2>&1 | tee excluded.log
+
+          # The assertion is on the refusal, and it is a positive one. A step
+          # that only checked the exit code would pass just as happily if the
+          # CLI had crashed before reaching the check — and "it refused" and "it
+          # died" are the two outcomes that must never be confused here.
+          if ! grep -q '::notice::excluded:' excluded.log; then
+            echo "::error::Rule 5 did not refuse the operator's own project. The exclusion list is not being enforced, which means the reviewer would review its own entry."
+            exit 1
+          fi
+          echo "OK — Rule 5 refused the operator's own project before collecting anything."
+
       # Annotations are the ONLY channel readable without admin rights on the
       # repo — the step summary and the uploaded bundle both require a token, and
       # the job log requires admin. So the evidence this job just produced is

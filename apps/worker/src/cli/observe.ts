@@ -30,12 +30,48 @@ import { lookup } from 'node:dns/promises';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { EvidenceArtifact } from '@observed/shared-types';
+import type { EvidenceArtifact, ExclusionListEntry } from '@observed/shared-types';
 import { collectEvidence, type CollectResult } from '../evidence-worker';
 import { storeRawArtifact } from '../evidence-store';
 import { CollectorNotImplementedError, type CollectorContext } from '../evidence-worker/collectors/types';
+import { checkExclusion, type ProjectIdentity } from '../policy-engine/exclusion';
+import { exclusionListJson } from '../config';
 
 const RAW_DIR = process.env.RAW_ARTIFACT_DIR ?? './raw-artifacts';
+
+/**
+ * Rule 5's list, parsed from the environment.
+ *
+ * The three outcomes are kept apart on purpose. "Unset" means the operator has
+ * declared no exclusions and is a normal state. "Invalid" must NOT collapse into
+ * it: a typo in the secret store would turn the list into `[]`, the check would
+ * pass, and the reviewer would cheerfully review its own entry — a wrong answer
+ * produced by a configuration mistake, which is precisely the failure this
+ * project exists to refuse. Config.ts documents the list as fail-closed; this is
+ * the caller that has to honour it.
+ */
+type ExclusionRead =
+  | { kind: 'unset' }
+  | { kind: 'list'; list: ExclusionListEntry[] }
+  | { kind: 'invalid'; reason: string };
+
+function readExclusionList(): ExclusionRead {
+  const raw = exclusionListJson();
+  if (raw === null) return { kind: 'unset' };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return { kind: 'invalid', reason: `it is not valid JSON (${String(error)})` };
+  }
+
+  if (!Array.isArray(parsed)) {
+    return { kind: 'invalid', reason: 'it is not a JSON array of ExclusionListEntry' };
+  }
+
+  return { kind: 'list', list: parsed as ExclusionListEntry[] };
+}
 
 /**
  * The real resolver. `verbatim: true` keeps the OS's own address ordering, and
@@ -135,6 +171,58 @@ async function main(): Promise<number> {
   console.log(`session       ${sessionId}`);
   console.log(`target        ${target}`);
   console.log(`repo          ${repoUrl ?? '(none declared)'}`);
+
+  // -------------------------------------------------------------------------
+  // Rule 5, and it runs HERE — before the collectors are constructed, before a
+  // socket is opened, and before anything could be spent. The position of this
+  // block is the rule. A conflict-of-interest check that runs after collection
+  // has already paid for the evidence it is about to refuse.
+  //
+  // This is the only place in the codebase that calls `checkExclusion`. It was
+  // written and tested and had no caller at all, which meant Rule 5 was a
+  // property of a module rather than of the running system — the exact gap this
+  // project exists to refuse, applied to its own rules.
+  // -------------------------------------------------------------------------
+  const exclusions = readExclusionList();
+
+  if (exclusions.kind === 'invalid') {
+    fail(
+      `EXCLUSION_LIST is set but ${exclusions.reason}, so Rule 5 cannot be enforced. Refusing to observe rather than running with the exclusion list silently empty.`,
+    );
+    return 1;
+  }
+
+  if (exclusions.kind === 'list') {
+    // `github_owner` accepts a full repo URL — `normalizeGithubOwner` takes the
+    // first path segment — so the flag is passed through as-is rather than
+    // pre-parsed here, which would be a second implementation of the same
+    // normalization and a second place for it to disagree.
+    const identity: ProjectIdentity = {
+      target_url: target,
+      ...(repoUrl ? { github_owner: repoUrl } : {}),
+    };
+
+    const refusal = checkExclusion(identity, exclusions.list);
+    if (refusal) {
+      console.log('');
+      console.log('='.repeat(72));
+      console.log('REFUSED BEFORE ANY EVIDENCE WAS COLLECTED — Rule 5');
+      console.log('='.repeat(72));
+      console.log(`  ${refusal.explanation}`);
+      console.log('');
+      // Exit 0, and that is deliberate. A refusal is the rule working, not a
+      // failure of this tool — the same distinction the exit code already draws
+      // for an `unknown_*` observation. Non-zero stays reserved for our own
+      // code throwing.
+      //
+      // The marker is a workflow command because annotations are the only
+      // channel readable without admin rights on the repo.
+      console.log(
+        '::notice::excluded: Rule 5 refused this target before collection — nothing was spent and no artifact was produced',
+      );
+      return 0;
+    }
+  }
 
   const storeRaw: CollectorContext['storeRaw'] = async (_name, bytes) =>
     storeRawArtifact(RAW_DIR, sessionId, bytes);
