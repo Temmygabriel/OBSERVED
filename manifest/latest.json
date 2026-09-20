@@ -1,0 +1,381 @@
+{
+  "manifest_version": 1,
+  "generated_by": "apps/worker/src/cli/manifest.ts",
+  "session_id": "obs-2026-09-20T17-52-40-743Z-f67cee",
+  "target": "https://celobuilders.xyz",
+  "repo_url": "https://github.com/Temmygabriel/OBSERVED",
+  "artifact_count": 8,
+  "artifacts": [
+    {
+      "artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-dns",
+      "collector": "dns",
+      "collector_version": "0.1.0",
+      "status": "valid",
+      "target_url": "https://celobuilders.xyz",
+      "resolved_ip": "137.184.23.32",
+      "observed_at": "2026-09-20T17:52:40.791Z",
+      "content_hash": "563c8907541ab5af4a597bab4b81ca949b4d8f396e37e4bba9e621dedb857e68",
+      "provider_request_id": null,
+      "metadata": {
+        "hostname": "celobuilders.xyz",
+        "addresses": [
+          "137.184.23.32"
+        ],
+        "address_count": 1,
+        "non_public_addresses": [],
+        "elapsed_ms": 34
+      },
+      "withheld_metadata_keys": [
+        "raw_ref"
+      ]
+    },
+    {
+      "artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-html",
+      "collector": "html",
+      "collector_version": "0.1.0",
+      "status": "valid",
+      "target_url": "https://celobuilders.xyz",
+      "resolved_ip": "208.103.161.33",
+      "observed_at": "2026-09-20T17:52:40.828Z",
+      "content_hash": "8f8c3e5e5f302cf957da23bc49d0fd772b159de0663876f985f96103f44ae8af",
+      "provider_request_id": null,
+      "metadata": {
+        "method": "GET",
+        "request_path": "/",
+        "final_url": "https://celoplatform.notion.site/Agents-at-Work-Hackathon-3c1d5cb803de81139de7f4f3d09e55dc",
+        "status_code": 200,
+        "content_type": "text/html; charset=utf-8",
+        "is_html": true,
+        "resolved_ip": "208.103.161.33",
+        "redirect_chain": [
+          "https://celoplatform.notion.site/Agents-at-Work-Hackathon-3c1d5cb803de81139de7f4f3d09e55dc"
+        ],
+        "redirect_count": 1,
+        "body_bytes": 24834,
+        "body_truncated": false,
+        "title": "Agents at Work Hackathon | Notion",
+        "title_length": 33,
+        "meta_description": "Build agentic products real people use on Celo, an Ethereum L2 built for fast, low-cost payments worldwide, leveraging the robust agentic tooling and infrastructure for bounties from a $5K prize pool, distributed in $CELO.",
+        "html_lang": "en",
+        "has_viewport_meta": true,
+        "hsts": "max-age=31536000; includeSubDomains; preload",
+        "headers": {
+          "content-type": [
+            "text/html; charset=utf-8"
+          ],
+          "server": [
+            "cloudflare"
+          ],
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains; preload"
+          ],
+          "x-content-type-options": [
+            "nosniff"
+          ]
+        },
+        "links_found": 4,
+        "links_checked": 4,
+        "links_skipped_over_cap": 0,
+        "links_skipped_unsupported": 0,
+        "links_skipped_self": 0,
+        "links_deduplicated": 0,
+        "links_method_downgraded": 0,
+        "sweep_elapsed_ms": 730,
+        "elapsed_ms": 415
+      },
+      "withheld_metadata_keys": [
+        "raw_ref"
+      ]
+    },
+    {
+      "artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-link-0",
+      "collector": "html",
+      "collector_version": "0.1.0",
+      "status": "valid",
+      "target_url": "https://www.youtube.com/watch?v=J5jC7HJMwVI",
+      "resolved_ip": "142.251.150.4",
+      "observed_at": "2026-09-20T17:52:40.828Z",
+      "content_hash": "ff021deda4214aff91a3448c42fd53f7f11953410501cf6b103fc27670cdc60b",
+      "provider_request_id": null,
+      "metadata": {
+        "method": "GET",
+        "declared_method": "GET",
+        "method_downgraded": false,
+        "kind": "link",
+        "href": "https://www.youtube.com/watch?v=J5jC7HJMwVI",
+        "found_on": "https://celoplatform.notion.site/Agents-at-Work-Hackathon-3c1d5cb803de81139de7f4f3d09e55dc",
+        "request_path": "/watch",
+        "status_code": 200,
+        "refused_by_status": false,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "content_type": "text/html; charset=utf-8",
+        "body_bytes": 65536,
+        "body_truncated": true,
+        "bytes_sent": 0,
+        "elapsed_ms": 116
+      },
+      "withheld_metadata_keys": [
+        "raw_ref"
+      ]
+    },
+    {
+      "artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-link-1",
+      "collector": "html",
+      "collector_version": "0.1.0",
+      "status": "valid",
+      "target_url": "https://chainstack.com/",
+      "resolved_ip": "104.18.5.35",
+      "observed_at": "2026-09-20T17:52:40.828Z",
+      "content_hash": "304682b8565433ef3fe043ffb48547fccbb3722fc6e44f98465bc6ea567a371d",
+      "provider_request_id": null,
+      "metadata": {
+        "method": "GET",
+        "declared_method": "GET",
+        "method_downgraded": false,
+        "kind": "link",
+        "href": "https://chainstack.com",
+        "found_on": "https://celoplatform.notion.site/Agents-at-Work-Hackathon-3c1d5cb803de81139de7f4f3d09e55dc",
+        "request_path": "/",
+        "status_code": 200,
+        "refused_by_status": false,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "content_type": "text/html; charset=UTF-8",
+        "body_bytes": 65536,
+        "body_truncated": true,
+        "bytes_sent": 0,
+        "elapsed_ms": 80
+      },
+      "withheld_metadata_keys": [
+        "raw_ref"
+      ]
+    },
+    {
+      "artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-link-2",
+      "collector": "html",
+      "collector_version": "0.1.0",
+      "status": "valid",
+      "target_url": "https://cencori.com/",
+      "resolved_ip": "64.29.17.65",
+      "observed_at": "2026-09-20T17:52:40.828Z",
+      "content_hash": "b7bc118b8277132646ee489e53e46d6b545ad9410fcdd7adacca838f260337af",
+      "provider_request_id": null,
+      "metadata": {
+        "method": "GET",
+        "declared_method": "GET",
+        "method_downgraded": false,
+        "kind": "link",
+        "href": "https://cencori.com",
+        "found_on": "https://celoplatform.notion.site/Agents-at-Work-Hackathon-3c1d5cb803de81139de7f4f3d09e55dc",
+        "request_path": "/",
+        "status_code": 200,
+        "refused_by_status": false,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "content_type": "text/html; charset=utf-8",
+        "body_bytes": 63267,
+        "body_truncated": false,
+        "bytes_sent": 0,
+        "elapsed_ms": 214
+      },
+      "withheld_metadata_keys": [
+        "raw_ref"
+      ]
+    },
+    {
+      "artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-link-3",
+      "collector": "html",
+      "collector_version": "0.1.0",
+      "status": "valid",
+      "target_url": "https://celo.org/",
+      "resolved_ip": "104.18.15.71",
+      "observed_at": "2026-09-20T17:52:40.828Z",
+      "content_hash": "b32a9dddd6e271364b08036349175f4f72ad76cc4cd615e61d406119cccdebe6",
+      "provider_request_id": null,
+      "metadata": {
+        "method": "GET",
+        "declared_method": "GET",
+        "method_downgraded": false,
+        "kind": "link",
+        "href": "https://celo.org",
+        "found_on": "https://celoplatform.notion.site/Agents-at-Work-Hackathon-3c1d5cb803de81139de7f4f3d09e55dc",
+        "request_path": "/",
+        "status_code": 200,
+        "refused_by_status": false,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "content_type": "text/html",
+        "body_bytes": 65536,
+        "body_truncated": true,
+        "bytes_sent": 0,
+        "elapsed_ms": 312
+      },
+      "withheld_metadata_keys": [
+        "raw_ref"
+      ]
+    },
+    {
+      "artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-tls",
+      "collector": "tls",
+      "collector_version": "0.1.0",
+      "status": "valid",
+      "target_url": "https://celobuilders.xyz",
+      "resolved_ip": "137.184.23.32",
+      "observed_at": "2026-09-20T17:52:42.011Z",
+      "content_hash": "e39c125d7681a2f4b4ae34ca475baafc3dd60322a1dbc1147a6730a14252f14b",
+      "provider_request_id": null,
+      "metadata": {
+        "port": 443,
+        "protocol": "TLSv1.3",
+        "cipher": "TLS_AES_128_GCM_SHA256",
+        "authorized": true,
+        "subject_cn": "celobuilders.xyz",
+        "issuer_cn": "YE1",
+        "issuer_org": "Let's Encrypt",
+        "valid_from": "Aug  3 10:06:51 2026 GMT",
+        "valid_to": "Nov  1 10:06:50 2026 GMT",
+        "days_until_expiry": 41,
+        "within_validity_window": true,
+        "fingerprint_sha256": "95:DB:A2:C7:AE:21:8A:C2:8C:FF:C0:C4:21:8C:00:03:0D:A5:DE:E1:51:09:5B:2D:1B:E0:85:60:13:B8:2F:72",
+        "serial_number": "06B1C0BB421D18A32EF9FCC0CB0ACFB718F1",
+        "subject_alt_names": "DNS:celobuilders.xyz",
+        "elapsed_ms": 58
+      },
+      "withheld_metadata_keys": [
+        "authorization_error",
+        "raw_ref"
+      ]
+    },
+    {
+      "artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-repo",
+      "collector": "repo",
+      "collector_version": "0.1.0",
+      "status": "valid",
+      "target_url": "https://github.com/Temmygabriel/OBSERVED",
+      "resolved_ip": "140.82.114.6",
+      "observed_at": "2026-09-20T17:52:42.128Z",
+      "content_hash": "7dae7a1510bd569837bb26f6eb31512c53cc24294ce1d9c23cb6cebe8f631e65",
+      "provider_request_id": null,
+      "metadata": {
+        "declared_url": "https://github.com/Temmygabriel/OBSERVED",
+        "owner": "Temmygabriel",
+        "repo": "OBSERVED",
+        "attempted_url": "https://api.github.com/repos/Temmygabriel/OBSERVED",
+        "api_host": "api.github.com",
+        "http_status": 200,
+        "resolved_ip": "140.82.114.6",
+        "redirect_chain": [],
+        "body_bytes": 5225,
+        "elapsed_ms": 154,
+        "full_name": "Temmygabriel/OBSERVED",
+        "visibility": "public",
+        "is_private": false,
+        "default_branch": "main",
+        "pushed_at": "2026-09-20T17:52:18Z",
+        "created_at": "2026-09-12T09:09:46Z",
+        "updated_at": "2026-09-20T17:52:22Z",
+        "archived": false,
+        "disabled": false,
+        "is_fork": false,
+        "stargazers_count": 0,
+        "open_issues_count": 0,
+        "size_kb": 420,
+        "html_url": "https://github.com/Temmygabriel/OBSERVED",
+        "license_spdx_id": null,
+        "license_name": null,
+        "has_license": false,
+        "head_commit_at": "2026-09-20T17:52:13Z",
+        "head_commit_sha": "5bf159cb36c52072ba3928c16da435db48d005d6",
+        "head_commit_outcome": "ok"
+      },
+      "withheld_metadata_keys": [
+        "raw_ref"
+      ]
+    }
+  ],
+  "claim_count": 8,
+  "claims": [
+    {
+      "claim_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-dns#resolves",
+      "evidence_artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-dns",
+      "exact_locator": "metadata.addresses",
+      "confidence": "high",
+      "observation": "celobuilders.xyz resolves to 137.184.23.32",
+      "inference": "the domain is publicly resolvable",
+      "action": ""
+    },
+    {
+      "claim_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-html#status",
+      "evidence_artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-html",
+      "exact_locator": "metadata.status_code",
+      "confidence": "high",
+      "observation": "the URL returned HTTP 200 after 1 redirect, ending at https://celoplatform.notion.site/Agents-at-Work-Hackathon-3c1d5cb803de81139de7f4f3d09e55dc",
+      "inference": "the page is publicly reachable and served without authentication",
+      "action": ""
+    },
+    {
+      "claim_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-html#title",
+      "evidence_artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-html",
+      "exact_locator": "metadata.title",
+      "confidence": "medium",
+      "observation": "the document title is \"Agents at Work Hackathon | Notion\"",
+      "inference": "the page declares its own subject, which can be compared against the project description",
+      "action": ""
+    },
+    {
+      "claim_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-html#links",
+      "evidence_artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-html",
+      "exact_locator": "metadata.links_checked",
+      "confidence": "high",
+      "observation": "the page declares 4 links and forms, of which 4 were probed",
+      "inference": "",
+      "action": ""
+    },
+    {
+      "claim_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-tls#handshake",
+      "evidence_artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-tls",
+      "exact_locator": "metadata.days_until_expiry",
+      "confidence": "high",
+      "observation": "a TLS handshake completed on port 443, for celobuilders.xyz, issued by YE1, valid until Nov  1 10:06:50 2026 GMT, 41 days remaining",
+      "inference": "traffic to this host is encrypted with a currently-valid certificate",
+      "action": ""
+    },
+    {
+      "claim_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-repo#readable",
+      "evidence_artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-repo",
+      "exact_locator": "metadata.full_name",
+      "confidence": "high",
+      "observation": "the repository Temmygabriel/OBSERVED is publicly readable, with default branch main",
+      "inference": "the source code is available for inspection without authentication",
+      "action": ""
+    },
+    {
+      "claim_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-repo#activity",
+      "evidence_artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-repo",
+      "exact_locator": "metadata.head_commit_at",
+      "confidence": "high",
+      "observation": "the most recent commit on the default branch is dated 2026-09-20T17:52:13Z",
+      "inference": "",
+      "action": ""
+    },
+    {
+      "claim_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-repo#license",
+      "evidence_artifact_id": "ev-obs-2026-09-20T17-52-40-743Z-f67cee-repo",
+      "exact_locator": "metadata.has_license",
+      "confidence": "medium",
+      "observation": "no licence file was found at the repository root",
+      "inference": "the terms under which others may use this code are not stated",
+      "action": "add a licence file"
+    }
+  ],
+  "held_reasons": [],
+  "review_text": "The domain is publicly resolvable, observed as celobuilders.xyz resolves to 137.184.23.32. The page is publicly reachable and served without authentication, observed as the URL returned HTTP 200 after 1 redirect, ending at https://celoplatform.notion.site/Agents-at-Work-Hackathon-3c1d5cb803de81139de7f4f3d09e55dc. The page declares its own subject, which can be compared against the project description, observed as the document title is \"Agents at Work Hackathon | Notion\". The page declares 4 links and forms, of which 4 were probed. Traffic to this host is encrypted with a currently-valid certificate, observed as a TLS handshake completed on port 443, for celobuilders.xyz, issued by YE1, valid until Nov  1 10:06:50 2026 GMT, 41 days remaining. The source code is available for inspection without authentication, observed as the repository Temmygabriel/OBSERVED is publicly readable, with default branch main. The most recent commit on the default branch is dated 2026-09-20T17:52:13Z. The terms under which others may use this code are not stated, observed as no licence file was found at the repository root.",
+  "verification": "To check this manifest without trusting it:\n1. Every claim cites evidence_artifact_id. Confirm it appears in artifacts[].\n2. Recompute sha256 of an artifact's raw bytes and compare to content_hash.\n3. Rebuild this body without the integrity field, canonicalize it with sorted\n   keys and no whitespace, sha256 that, and compare to integrity.body_hash.\n   The hash announced on the commit that produced this file must match.\n4. Determine the claims from artifacts[] with the drafter in\n   apps/worker/src/review-generator/draft-from-evidence.ts and confirm they match.",
+  "integrity": {
+    "algorithm": "sha256",
+    "canonicalization": "sorted keys, no whitespace (see audit-ledger canonicalize)",
+    "note": "body_hash covers this document without the integrity field.",
+    "body_hash": "aabc940f4f9ccb9820d38165d034646bf7e49a73190d7aeaed551cc1e20b13da"
+  }
+}
