@@ -370,8 +370,21 @@ test('an unreadable repository is never described as not existing', async () => 
   const text = await review([one]);
 
   assert.ok(text.includes('not publicly readable'), `expected the careful wording, got: ${text}`);
-  assert.ok(!text.includes('does not exist'), `claimed absence from a 404: ${text}`);
-  assert.ok(text.includes('private'), 'it must name the indistinguishable case');
+  // The forbidden thing is a definite absence claim, not the words "does not
+  // exist" — the hedged sentence is "either private or does not exist", which
+  // mentions absence precisely in order to refuse to assert it. A bare
+  // `!text.includes('does not exist')` therefore fires on the correct wording,
+  // which is what this test did on its first real run. So the assertion names
+  // the definite sentence the other branch produces, and then requires the
+  // hedge to actually be present rather than merely implied by its absence.
+  assert.ok(
+    !text.includes('the repository does not exist at this address'),
+    `claimed definite absence from a 404: ${text}`,
+  );
+  assert.ok(
+    text.includes('either private or does not exist'),
+    `the indistinguishable case must be named, not left to inference: ${text}`,
+  );
 });
 
 test('a repository that IS distinguishable may say it does not exist', async () => {
